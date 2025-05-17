@@ -3,12 +3,11 @@ import { faker } from '@faker-js/faker';
 
 const prisma = new PrismaClient();
 
-// Helper to pick a random date within the last year
-function randomDateWithinLastYear() {
-  const now = new Date();
-  const past = new Date();
-  past.setFullYear(now.getFullYear() - 1);
-  return new Date(past.getTime() + Math.random() * (now.getTime() - past.getTime()));
+// Helper to pick a random date within the last 3 months (01/03/2025 to 16/05/2025)
+function randomDateWithinLast3Months() {
+  const start = new Date('2025-03-01T00:00:00');
+  const end = new Date('2025-05-16T23:59:59');
+  return new Date(start.getTime() + Math.random() * (end.getTime() - start.getTime()));
 }
 
 async function main() {
@@ -153,9 +152,9 @@ async function main() {
     customers.push(cu);
   }
 
-  // Create Purchase Logs (300 entries)
-  for (let i = 0; i < 300; i++) {
-    const date = randomDateWithinLastYear();
+  // Create Purchase Logs (580 entries)
+  for (let i = 0; i < 580; i++) {
+    const date = randomDateWithinLast3Months();
     const supplier = suppliers[Math.floor(Math.random() * suppliers.length)];
     const itemCount = faker.number.int({ min: 1, max: 5 });
     const items = [];
@@ -185,9 +184,9 @@ async function main() {
     }
   }
 
-  // Create Sale Logs (320 entries)
-  for (let i = 0; i < 320; i++) {
-    const date = randomDateWithinLastYear();
+  // Create Sale Logs (600 entries)
+  for (let i = 0; i < 600; i++) {
+    const date = randomDateWithinLast3Months();
     const seller = sellers[Math.floor(Math.random() * sellers.length)];
     const customer = customers[Math.floor(Math.random() * customers.length)];
     const itemCount = faker.number.int({ min: 1, max: 5 });
