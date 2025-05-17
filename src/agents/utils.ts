@@ -1,3 +1,32 @@
+import { OpenAI } from "openai";
+import { productRepository } from "../database/repositories/productRepository.js";
+
+type Product = {
+    id: number;
+    name: string;
+    description: string | null;
+    sku: string | null;
+    price: number;
+    cost: number;
+    supplierId: number | null;
+    categoryId: number | null;
+    createdAt: Date;
+    updatedAt: Date;
+    supplier?: any;
+    category?: any;
+};
+
+type EmbeddingResponse = {
+    data: Array<{
+        embedding: number[];
+    }>;
+};
+
+type SimilarityResult = {
+    product: Product;
+    similarity: number;
+};
+
 /**
  * Retorna uma mensagem estruturada com informações sobre data e hora atual e projeções futuras
  * @returns {string} Mensagem formatada com informações de data e hora
@@ -58,3 +87,74 @@ export function getInformacaoDataHora(): string {
   
   return mensagem;
 }
+
+// Função para calcular similaridade de cosseno entre dois vetores
+function cosineSimilarity(vecA: number[], vecB: number[]): number {
+    const dotProduct = vecA.reduce((acc, val, i) => acc + val * vecB[i], 0);
+    const magnitudeA = Math.sqrt(vecA.reduce((acc, val) => acc + val * val, 0));
+    const magnitudeB = Math.sqrt(vecB.reduce((acc, val) => acc + val * val, 0));
+    return dotProduct / (magnitudeA * magnitudeB);
+}
+
+/**
+ * Identifica um produto pelo nome usando similaridade de embeddings
+ * @param name Nome do produto a ser buscado
+ * @param similarityThreshold Limiar de similaridade (0 a 1)
+ * @returns O produto mais similar encontrado ou null se nenhum produto atingir o limiar
+ */
+export async function identifyProductByName(name: string, similarityThreshold: number = 0.8) {
+    const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+
+    try {
+        // Busca todos os produtos usando o repositório
+        const products = await productRepository.findAll();
+        
+        if (products.length === 0) {
+            return null;
+        }
+
+        // Gera embedding para o nome buscado
+        const searchEmbedding = await openai.embeddings.create({
+            model: "text-embedding-3-small",
+            input: name,
+        });
+
+        // Gera embeddings para todos os produtos em paralelo
+        const productEmbeddings = await Promise.all(
+            products.map((product: Product) => 
+                openai.embeddings.create({
+                    model: "text-embedding-3-small",
+                    input: product.name,
+                })
+            )
+        );
+
+        // Calcula similaridade com cada produto
+        const similarities = productEmbeddings.map((embedding: EmbeddingResponse, index: number) => ({
+            product: products[index],
+            similarity: cosineSimilarity(
+                searchEmbedding.data[0].embedding,
+                embedding.data[0].embedding
+            )
+        }));
+
+        // Encontra o produto mais similar
+        const mostSimilar = similarities.reduce((prev: SimilarityResult, current: SimilarityResult) => 
+            current.similarity > prev.similarity ? current : prev
+        );
+
+        // Retorna o produto se atingir o limiar de similaridade
+        if (mostSimilar.similarity >= similarityThreshold) {
+            return {
+                product: mostSimilar.product,
+                similarity: mostSimilar.similarity
+            };
+        }
+
+        return null;
+    } catch (error) {
+        console.error('Erro ao identificar produto:', error);
+        throw error;
+    }
+}
+      

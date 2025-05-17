@@ -30,10 +30,26 @@ export class HistoryAgent {
 
         Você faz parte de um sistema de agentes que responde perguntas sobre o histórico de dados de uma empresa.
 
+        # Objetivo
+        - Responder perguntas sobre o histórico de dados de uma empresa.
+        - Analisar os dados e fornecer respostas detalhadas.
+        - Chame a função identifyProductByName para buscar o produto mais similar ao nome fornecido.
+
+        # Funções
+        - identifyProductByName(name: string) : retorna o produto mais similar ao nome fornecido
+
+        # Fluxo de trabalho
+        -
+
+        # Exemplos de perguntas
+        - 
+
+        # Regras
+        - 
         `;
     }
     constructor() {
-        this.openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY___RESUME_CONVERSATIONS });
+        this.openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
         this.model = this.config.model;
         this.temperature = this.config.temperature;
     }
@@ -92,8 +108,8 @@ export class HistoryAgent {
 
                     let toolCallResponse;
                     switch (toolName) {
-                        case 'sampleFunction':
-                            toolCallResponse = sampleFunction(toolArgs.sampleProperty);
+                        case 'identifyProductByName':
+                            toolCallResponse = await identifyProductByName(toolArgs.name);
                             break;
                         default:
                             throw new Error(`Ferramenta desconhecida: ${toolName}`);
@@ -158,8 +174,8 @@ export const tools = [
     {
         type: 'function' as const,
         function: {
-            name: 'sampleFunction',
-            description: 'Retorna uma resposta de exemplo',
+            name: 'identifyProductByName',
+            description: 'Retorna o produto mais similar ao nome fornecido',
             strict: true,
             parameters: {
                 type: 'object',
@@ -173,18 +189,19 @@ export const tools = [
     },
 ];
 
-export const sampleFunction = (sampleProperty: string): {
+export const identifyProductByName = async (name: string): Promise<{
     final: boolean;
     response: {
         reasoning: string;
         response: string;
     }
-} => {
+}> => {
+    const product = await identifyProductByName(name);
     return {
         final: true,
         response: {
             reasoning: 'Resposta de exemplo',
-            response: `Resposta de exemplo: ${sampleProperty}`,
+            response: `Resposta de exemplo: ${product}`,
         },
     };
 };
