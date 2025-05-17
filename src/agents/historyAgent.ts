@@ -6,7 +6,7 @@ import OpenAI from 'openai';
 import { zodResponseFormat } from 'openai/helpers/zod';
 import { ChatCompletionMessageParam } from 'openai/resources';
 import { z } from 'zod';
-import { identifyProductByName } from './utils.js';
+import { getInformacaoDataHora, identifyProductByName } from './utils.js';
 import { productRepository } from '../database/repositories/productRepository.js';
 import { purchaseItemRepository } from '../database/repositories/purchaseItemRepository.js';
 import { purchaseRepository } from '../database/repositories/purchaseRepository.js';
@@ -238,7 +238,7 @@ export class HistoryAgent {
         - "Qual a margem de lucro por unidade do produto J?"
 
         # Dia de hoje
-        - ${new Date().toLocaleDateString('pt-BR')}
+        - ${getInformacaoDataHora()}
 
         # Regras
         - Sempre identifique o produto usando identifyProductByName antes de buscar métricas específicas
@@ -265,7 +265,7 @@ export class HistoryAgent {
 
             let filteredTools = tools;
 
-            const maxIterations = 7;
+            const maxIterations = 12;
             let currentMessages = [...messages];
             let lastResponse = null;
             const aiThoughts = [];
