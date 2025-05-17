@@ -1,26 +1,38 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
+// Prisma schema for ConstruApp Database
 
 generator client {
   provider = "prisma-client-js"
 }
 
 datasource db {
-  provider = "sqlite" // Usando SQLite para o MVP
+  provider = "sqlite"
   url      = env("DATABASE_URL")
 }
-
-// Model Definitions
 
 model Supplier {
   id         Int        @id @default(autoincrement())
   name       String
   contact    String?
   email      String?    @unique
-  products   Product[]  
-  purchases  Purchase[] 
+  products   Product[]
+  purchases  Purchase[]
   createdAt  DateTime   @default(now())
   updatedAt  DateTime   @updatedAt
+}
+
+model Category {
+  id        Int       @id @default(autoincrement())
+  name      String    @unique
+  products  Product[]
+}
+
+model Warehouse {
+  id           Int         @id @default(autoincrement())
+  name         String
+  location     String?
+  inventory    Inventory[]
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
 }
 
 model Product {
@@ -34,9 +46,9 @@ model Product {
   supplierId   Int?
   category     Category?       @relation(fields: [categoryId], references: [id])
   categoryId   Int?
-  saleItems    SaleItem[]      
-  purchaseItems PurchaseItem[] 
-  inventory    Inventory[]     
+  saleItems    SaleItem[]
+  purchaseItems PurchaseItem[]
+  inventory    Inventory[]
   createdAt    DateTime        @default(now())
   updatedAt    DateTime        @updatedAt
 }
@@ -46,7 +58,7 @@ model Seller {
   name       String
   email      String  @unique
   phone      String?
-  sales      Sale[]  
+  sales      Sale[]
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
 }
@@ -56,7 +68,7 @@ model Customer {
   name       String
   email      String? @unique
   phone      String?
-  sales      Sale[]  
+  sales      Sale[]
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
 }
@@ -68,8 +80,8 @@ model Sale {
   sellerId    Int
   customer    Customer?   @relation(fields: [customerId], references: [id])
   customerId  Int?
-  totalValue  Float       
-  items       SaleItem[]  
+  totalValue  Float
+  items       SaleItem[]
   createdAt   DateTime    @default(now())
   updatedAt   DateTime    @updatedAt
 }
@@ -90,7 +102,7 @@ model Purchase {
   supplier     Supplier       @relation(fields: [supplierId], references: [id])
   supplierId   Int
   totalCost    Float
-  items        PurchaseItem[] 
+  items        PurchaseItem[]
   createdAt    DateTime       @default(now())
   updatedAt    DateTime       @updatedAt
 }
@@ -113,19 +125,4 @@ model Inventory {
   warehouseId  Int
   quantity     Int
   updatedAt    DateTime  @updatedAt
-}
-
-model Warehouse {
-  id           Int         @id @default(autoincrement())
-  name         String
-  location     String?
-  inventory    Inventory[]
-  createdAt    DateTime    @default(now())
-  updatedAt    DateTime    @updatedAt
-}
-
-model Category {
-  id        Int       @id @default(autoincrement())
-  name      String    @unique
-  products  Product[] 
 }
