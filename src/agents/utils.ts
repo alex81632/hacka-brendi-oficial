@@ -12,8 +12,18 @@ type Product = {
     categoryId: number | null;
     createdAt: Date;
     updatedAt: Date;
-    supplier?: any;
-    category?: any;
+    supplier: {
+        id: number;
+        name: string;
+        contact: string | null;
+        email: string | null;
+        createdAt: Date;
+        updatedAt: Date;
+    } | null;
+    category: {
+        id: number;
+        name: string;
+    } | null;
 };
 
 type EmbeddingResponse = {
@@ -102,10 +112,11 @@ function cosineSimilarity(vecA: number[], vecB: number[]): number {
  * @param similarityThreshold Limiar de similaridade (0 a 1)
  * @returns O produto mais similar encontrado ou null se nenhum produto atingir o limiar
  */
-export async function identifyProductByName(name: string, similarityThreshold: number = 0.8) {
+export async function identifyProductByName(name: string, similarityThreshold: number = 0.45) {
     const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
     try {
+        console.log(`[identifyProductByName] Buscando produto com nome: ${name}`);
         // Busca todos os produtos usando o repositório
         const products = await productRepository.findAll();
         
@@ -143,6 +154,7 @@ export async function identifyProductByName(name: string, similarityThreshold: n
             current.similarity > prev.similarity ? current : prev
         );
 
+        console.log(`[identifyProductByName] Produto mais similar: ${mostSimilar.product.name} com similaridade: ${mostSimilar.similarity}`);
         // Retorna o produto se atingir o limiar de similaridade
         if (mostSimilar.similarity >= similarityThreshold) {
             return {

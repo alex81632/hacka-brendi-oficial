@@ -36,7 +36,6 @@ async function run() {
 
     const content = ctx.message.text;
     messages.push({ role: "user", content });
-    messages = messages.slice(-8);
 
     const { reasoning, response } = await mainHandle(messages);
 

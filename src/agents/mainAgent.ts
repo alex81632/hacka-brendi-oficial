@@ -31,13 +31,13 @@ export class MainAgent {
 
 As categorias são:
 
-"history" - Perguntas sobre eventos, dados ou situações que ocorreram no passado.
+"history" - Perguntas sobre eventos, dados ou situações que ocorreram no passado ou dados de estoque.
 
 "forecast" - Perguntas relacionadas a projeções, previsões ou estimativas para o futuro.
 
 "analysis" - Perguntas que exigem uma análise completa, abrangendo passado, presente e futuro, podendo incluir gráficos, relatórios ou comparações.
 
-"general" - Perguntas gerais que não se encaixam nas categorias acima.
+"general" - Coisas como "Ola", "Como você está?", "O que você faz?", e etc. Se estiver em dúvida, mande para history.
 
 Instruções adicionais:
 
