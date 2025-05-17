@@ -1,0 +1,131 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite" // Usando SQLite para o MVP
+  url      = env("DATABASE_URL")
+}
+
+// Model Definitions
+
+model Supplier {
+  id         Int        @id @default(autoincrement())
+  name       String
+  contact    String?
+  email      String?    @unique
+  products   Product[]  
+  purchases  Purchase[] 
+  createdAt  DateTime   @default(now())
+  updatedAt  DateTime   @updatedAt
+}
+
+model Product {
+  id           Int             @id @default(autoincrement())
+  name         String
+  description  String?
+  sku          String?         @unique
+  price        Float
+  cost         Float
+  supplier     Supplier?       @relation(fields: [supplierId], references: [id])
+  supplierId   Int?
+  category     Category?       @relation(fields: [categoryId], references: [id])
+  categoryId   Int?
+  saleItems    SaleItem[]      
+  purchaseItems PurchaseItem[] 
+  inventory    Inventory[]     
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
+}
+
+model Seller {
+  id         Int     @id @default(autoincrement())
+  name       String
+  email      String  @unique
+  phone      String?
+  sales      Sale[]  
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+}
+
+model Customer {
+  id         Int     @id @default(autoincrement())
+  name       String
+  email      String? @unique
+  phone      String?
+  sales      Sale[]  
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+}
+
+model Sale {
+  id          Int         @id @default(autoincrement())
+  date        DateTime    @default(now())
+  seller      Seller      @relation(fields: [sellerId], references: [id])
+  sellerId    Int
+  customer    Customer?   @relation(fields: [customerId], references: [id])
+  customerId  Int?
+  totalValue  Float       
+  items       SaleItem[]  
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+}
+
+model SaleItem {
+  id         Int      @id @default(autoincrement())
+  sale       Sale     @relation(fields: [saleId], references: [id])
+  saleId     Int
+  product    Product  @relation(fields: [productId], references: [id])
+  productId  Int
+  quantity   Int
+  unitPrice  Float
+}
+
+model Purchase {
+  id           Int            @id @default(autoincrement())
+  date         DateTime       @default(now())
+  supplier     Supplier       @relation(fields: [supplierId], references: [id])
+  supplierId   Int
+  totalCost    Float
+  items        PurchaseItem[] 
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+}
+
+model PurchaseItem {
+  id           Int      @id @default(autoincrement())
+  purchase     Purchase @relation(fields: [purchaseId], references: [id])
+  purchaseId   Int
+  product      Product  @relation(fields: [productId], references: [id])
+  productId    Int
+  quantity     Int
+  costPrice    Float
+}
+
+model Inventory {
+  id           Int       @id @default(autoincrement())
+  product      Product   @relation(fields: [productId], references: [id])
+  productId    Int
+  warehouse    Warehouse @relation(fields: [warehouseId], references: [id])
+  warehouseId  Int
+  quantity     Int
+  updatedAt    DateTime  @updatedAt
+}
+
+model Warehouse {
+  id           Int         @id @default(autoincrement())
+  name         String
+  location     String?
+  inventory    Inventory[]
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+}
+
+model Category {
+  id        Int       @id @default(autoincrement())
+  name      String    @unique
+  products  Product[] 
+}
