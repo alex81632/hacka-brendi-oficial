@@ -27,6 +27,7 @@ export class SampleAgent {
     private buildPrompt() {
         this.prompt = `
         # AGENTE DE EXEMPLO
+
         `;
     }
     constructor() {
@@ -37,8 +38,7 @@ export class SampleAgent {
 
     public async process(messages: ChatCompletionMessageParam[]): Promise<{
         reasoning: string;
-        isQuestion: boolean;
-        question: string;
+        response: string;
     }> {
         try {
             this.buildPrompt();

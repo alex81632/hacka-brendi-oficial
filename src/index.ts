@@ -3,7 +3,9 @@ import { openai } from '@ai-sdk/openai';
 import { CoreMessage, generateText } from 'ai';
 import { Context, Telegraf } from "telegraf";
 import { message } from "telegraf/filters";
-
+import { SampleAgent } from "./agents/sampleAgent.js";
+import { ChatCompletionMessageParam } from "openai/resources";
+import { MainAgent } from "./agents/mainAgent.js";
 async function connectToTelegram() {
   const telegraf = new Telegraf<Context>(process.env.TELEGRAM_TOKEN!);
   telegraf.launch();
@@ -25,7 +27,7 @@ async function run() {
     throw new Error("OpenAI API key is required");
   }
 
-  let messages: CoreMessage[] = [];
+  let messages: ChatCompletionMessageParam[] = [];
 
   const telegram = await connectToTelegram();
 
@@ -37,18 +39,16 @@ async function run() {
     messages.push({ role: "user", content });
     messages = messages.slice(-8);
 
-    const { text: answer } = await generateText({
-      model: openai("gpt-4o-mini-2024-07-18"),
-      messages
-    });
+    const agent = new MainAgent();
+    const { reasoning, category } = await agent.process(messages);
 
-    if (!answer) {
+    if (!category) {
       return;
     }
 
-    messages.push({ role: "assistant", content: answer });
-    
-    await telegram.telegram.sendMessage(Number(telegramChatId), answer);
+    messages.push({ role: "assistant", content: category });
+
+    await telegram.telegram.sendMessage(Number(telegramChatId), category);
   });
 
   telegram.on(message("voice"), async (ctx) => {
