@@ -19,7 +19,7 @@ export class MainAgent {
     };
     private schema = z.object({
         reasoning: z.string().describe('O raciocínio para a classificação da pergunta'),
-        category: z.enum(['history', 'forecast', 'analysis']).describe('A categoria da pergunta'),
+        category: z.enum(['history', 'forecast', 'analysis', 'general']).describe('A categoria da pergunta'),
     });
     private responseFormat = zodResponseFormat(this.schema, 'MainAgentResponse');
     private prompt = '';
@@ -37,6 +37,8 @@ As categorias são:
 
 "analysis" - Perguntas que exigem uma análise completa, abrangendo passado, presente e futuro, podendo incluir gráficos, relatórios ou comparações.
 
+"general" - Perguntas gerais que não se encaixam nas categorias acima.
+
 Instruções adicionais:
 
 Se a pergunta não se encaixar claramente em nenhuma das categorias acima, responda educadamente que não é possível classificá-la.
@@ -44,7 +46,7 @@ Se a pergunta não se encaixar claramente em nenhuma das categorias acima, respo
 Se a pergunta não estiver relacionada à empresa ou ao contexto de construção, responda educadamente que só pode tratar de questões relacionadas à Construction Co.
 
 Formato de resposta: RESPONDA APENAS NESSE FORMATO CASO HAJA CATEGORIA ENCONTRADA
-{Categoria: history | forecast | analysis}
+{Categoria: history | forecast | analysis | general}
         `;
     }
     constructor() {
