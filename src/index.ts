@@ -1,11 +1,10 @@
 import { config } from "dotenv";
-import { openai } from '@ai-sdk/openai';
-import { CoreMessage, generateText } from 'ai';
 import { Context, Telegraf } from "telegraf";
 import { message } from "telegraf/filters";
-import { SampleAgent } from "./agents/sampleAgent.js";
 import { ChatCompletionMessageParam } from "openai/resources";
-import { MainAgent } from "./agents/mainAgent.js";
+import { mainHandle } from "./handler/index.js";
+import { TranscribeAudio } from "./agents/transcriberAgent.js";
+
 async function connectToTelegram() {
   const telegraf = new Telegraf<Context>(process.env.TELEGRAM_TOKEN!);
   telegraf.launch();
@@ -37,18 +36,16 @@ async function run() {
 
     const content = ctx.message.text;
     messages.push({ role: "user", content });
-    messages = messages.slice(-8);
 
-    const agent = new MainAgent();
-    const { reasoning, category } = await agent.process(messages);
+    const { reasoning, response } = await mainHandle(messages);
 
-    if (!category) {
+    if (!response) {
       return;
     }
 
-    messages.push({ role: "assistant", content: category });
+    messages.push({ role: "assistant", content: response });
 
-    await telegram.telegram.sendMessage(Number(telegramChatId), category);
+    await telegram.telegram.sendMessage(Number(telegramChatId), response);
   });
 
   telegram.on(message("voice"), async (ctx) => {
@@ -57,7 +54,21 @@ async function run() {
 
     const voice = ctx.message.voice;
     const voiceUrl = await ctx.telegram.getFileLink(voice.file_id);
-    console.log(voiceUrl);
+    
+    const transcriber = new TranscribeAudio();
+    const transcription = await transcriber.process(voiceUrl.href);
+
+    messages.push({ role: "user", content: transcription });
+
+    const { reasoning, response } = await mainHandle(messages);
+
+    if (!response) {
+      return;
+    }
+
+    messages.push({ role: "assistant", content: response });
+
+    await telegram.telegram.sendMessage(Number(telegramChatId), response);
   });
 }
 
