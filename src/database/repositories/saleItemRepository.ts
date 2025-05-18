@@ -54,6 +54,28 @@ export const saleItemRepository = {
   
   // Estatísticas de vendas de produtos por período
   getProductSaleStats: async (productId: number, startDate: Date, endDate: Date) => {
+    // Validar datas
+    if (!startDate || isNaN(startDate.getTime())) {
+      console.error("[getProductSaleStats] Data inicial inválida, usando data padrão");
+      startDate = new Date();
+      startDate.setDate(startDate.getDate() - 30);
+    }
+    
+    if (!endDate || isNaN(endDate.getTime())) {
+      console.error("[getProductSaleStats] Data final inválida, usando data atual");
+      endDate = new Date();
+    }
+    
+    // Garantir que a data inicial seja anterior à data final
+    if (startDate > endDate) {
+      console.warn("[getProductSaleStats] Data inicial é posterior à data final, trocando as datas");
+      const temp = startDate;
+      startDate = endDate;
+      endDate = temp;
+    }
+    
+    console.log(`[getProductSaleStats] Buscando estatísticas do produto #${productId} de ${startDate.toISOString()} até ${endDate.toISOString()}`);
+    
     const items = await prisma.saleItem.findMany({
       where: {
         productId,
@@ -91,6 +113,20 @@ export const saleItemRepository = {
   
   // Produtos mais vendidos em um período
   getTopSellingProducts: async (startDate: Date, endDate: Date, limit: number = 10) => {
+    // Validar datas
+    if (!startDate || isNaN(startDate.getTime())) {
+      console.error("[getTopSellingProducts] Data inicial inválida, usando data padrão");
+      startDate = new Date();
+      startDate.setDate(startDate.getDate() - 30);
+    }
+    
+    if (!endDate || isNaN(endDate.getTime())) {
+      console.error("[getTopSellingProducts] Data final inválida, usando data atual");
+      endDate = new Date();
+    }
+    
+    console.log(`[getTopSellingProducts] Buscando produtos de ${startDate.toISOString()} até ${endDate.toISOString()}`);
+    
     const items = await prisma.saleItem.findMany({
       where: {
         sale: {

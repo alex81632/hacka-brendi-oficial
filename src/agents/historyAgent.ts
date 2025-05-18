@@ -18,6 +18,7 @@ import { sellerRepository } from '../database/repositories/sellerRepository.js';
 import { customerRepository } from '../database/repositories/customerRepository.js';
 import { categoryRepository } from '../database/repositories/categoryRepository.js';
 import { supplierRepository } from '../database/repositories/supplierRepository.js';
+import { prisma } from '../database/prisma.js';
 import { Context } from 'telegraf';
 
 // Adicionar interface no início do arquivo, após os imports
@@ -543,6 +544,161 @@ async function getProductMargin(productId?: number) {
     return result.sort((a, b) => b.margin - a.margin);
 }
 
+/**
+ * Retorna os 10 melhores produtos ranqueados por diferentes métricas
+ * em um período específico.
+ */
+async function getTopProducts(startDate?: Date, endDate: Date = new Date(), limit: number = 10) {
+    // Validar datas
+    if (!startDate || isNaN(startDate.getTime())) {
+        console.error("[getTopProducts] Data inicial inválida, usando data padrão");
+        startDate = new Date();
+        startDate.setDate(startDate.getDate() - 30);
+    }
+    
+    if (!endDate || isNaN(endDate.getTime())) {
+        console.error("[getTopProducts] Data final inválida, usando data atual");
+        endDate = new Date();
+    }
+    
+    console.log(`[getTopProducts] Período: ${startDate.toISOString()} - ${endDate.toISOString()}`);
+    
+    // 1. Ranking por quantidade vendida
+    const topByQuantity = await saleItemRepository.getTopSellingProducts(startDate, endDate, limit);
+    
+    // 2. Buscar todas as vendas no período
+    const sales = await saleRepository.findByDateRange(startDate, endDate);
+    
+    // Mapeamento para calcular valor total de vendas e lucro
+    const productSaleMap: Record<number, {
+        productId: number;
+        productName: string;
+        totalRevenue: number;
+        totalQuantity: number;
+        costPrice: number | null;
+        profit: number;
+    }> = {};
+    
+    // Processar todas as vendas e seus itens
+    for (const sale of sales) {
+        for (const item of sale.items) {
+            const productId = item.productId;
+            
+            if (!productSaleMap[productId]) {
+                // Buscar último custo do produto para calcular lucro
+                const lastPurchase = await purchaseItemRepository.findByProductId(productId);
+                const costPrice = lastPurchase?.[0]?.costPrice || null;
+                
+                // Buscar produto para obter nome
+                const product = await productRepository.findById(productId);
+                
+                productSaleMap[productId] = {
+                    productId,
+                    productName: product?.name || `Produto #${productId}`,
+                    totalRevenue: 0,
+                    totalQuantity: 0,
+                    costPrice,
+                    profit: 0
+                };
+            }
+            
+            productSaleMap[productId].totalRevenue += item.quantity * item.unitPrice;
+            productSaleMap[productId].totalQuantity += item.quantity;
+            
+            // Calcular lucro se tiver preço de custo
+            if (productSaleMap[productId].costPrice) {
+                productSaleMap[productId].profit += 
+                    item.quantity * (item.unitPrice - productSaleMap[productId].costPrice);
+            }
+        }
+    }
+    
+    const products = Object.values(productSaleMap);
+    
+    // 2. Ranking por valor (receita)
+    const topByRevenue = [...products]
+        .sort((a, b) => b.totalRevenue - a.totalRevenue)
+        .slice(0, limit)
+        .map(product => ({
+            productId: product.productId,
+            productName: product.productName,
+            totalRevenue: product.totalRevenue,
+            totalQuantity: product.totalQuantity
+        }));
+    
+    // 3. Ranking por lucro 
+    const topByProfit = [...products]
+        .filter(product => product.costPrice !== null)  // Filtra apenas produtos com custo conhecido
+        .sort((a, b) => b.profit - a.profit)
+        .slice(0, limit)
+        .map(product => ({
+            productId: product.productId,
+            productName: product.productName,
+            profit: product.profit,
+            totalQuantity: product.totalQuantity,
+            costPrice: product.costPrice
+        }));
+    
+    return {
+        byQuantity: topByQuantity,
+        byRevenue: topByRevenue,
+        byProfit: topByProfit
+    };
+}
+
+/**
+ * Função auxiliar para validar e corrigir datas
+ * Garante que retorne uma data válida, mesmo que a entrada seja inválida
+ */
+function validateAndFixDate(date: Date | string | undefined, defaultOffset: number = 0): Date {
+    let validDate: Date;
+    
+    if (!date) {
+        // Se não foi fornecida uma data, usar a data atual com o offset
+        validDate = new Date();
+        if (defaultOffset !== 0) {
+            validDate.setDate(validDate.getDate() + defaultOffset);
+        }
+        return validDate;
+    }
+    
+    // Se for uma string, tentar converter para Date
+    if (typeof date === 'string') {
+        // Verificar se é um formato DD/MM/YYYY
+        if (date.includes('/')) {
+            const parts = date.split('/');
+            if (parts.length === 3) {
+                // Convertendo de DD/MM/YYYY para YYYY-MM-DD
+                try {
+                    validDate = new Date(`${parts[2]}-${parts[1]}-${parts[0]}`);
+                    if (!isNaN(validDate.getTime())) {
+                        return validDate;
+                    }
+                } catch (e) {
+                    console.error(`Erro ao converter data (${date})`, e);
+                }
+            }
+        }
+        
+        // Tentar parse normal
+        validDate = new Date(date);
+    } else {
+        // Já é um objeto Date
+        validDate = date;
+    }
+    
+    // Verificar se a data é válida
+    if (isNaN(validDate.getTime())) {
+        console.error(`Data inválida: ${date}, usando data padrão`);
+        validDate = new Date();
+        if (defaultOffset !== 0) {
+            validDate.setDate(validDate.getDate() + defaultOffset);
+        }
+    }
+    
+    return validDate;
+}
+
 export class HistoryAgent {
 
     private openai: OpenAI;
@@ -619,6 +775,12 @@ export class HistoryAgent {
            - Envia o gráfico para o usuário via Telegram
            - Use createChart() para visualizar dados de forma gráfica
            - Você pode criar gráficos para vendas, estoque, margem, receita, etc.
+
+        10. Top 10 Produtos
+           - Rankings dos 10 melhores produtos por diferentes métricas
+           - Por quantidade vendida, valor de vendas e lucro
+           - Use getTopProducts()
+           - Ideal para análise de desempenho de produtos
 
         # Sobre os Gráficos
         - Os gráficos são uma excelente forma de visualizar dados e tendências
@@ -801,9 +963,26 @@ export class HistoryAgent {
                             };
                             break;
                         case 'getDailySales':
+                            // Validar e corrigir datas de entrada
+                            const startDateForSales = validateAndFixDate(
+                                toolArgs.startDate && toolArgs.startDate !== "" ? toolArgs.startDate : undefined, 
+                                -30
+                            );
+                            const endDateForSales = validateAndFixDate(
+                                toolArgs.endDate && toolArgs.endDate !== "" ? toolArgs.endDate : undefined
+                            );
+                            
+                            // Garantir que a data inicial é anterior à final
+                            if (startDateForSales > endDateForSales) {
+                                console.warn("[getDailySales] Data inicial posterior à final, trocando datas");
+                                const temp = startDateForSales;
+                                startDateForSales.setTime(endDateForSales.getTime());
+                                endDateForSales.setTime(temp.getTime());
+                            }
+                            
                             const productIdForSales = toolArgs.productId && toolArgs.productId > 0 ? toolArgs.productId : undefined;
-                            const startDateForSales = toolArgs.startDate && toolArgs.startDate !== "" ? new Date(toolArgs.startDate) : undefined;
-                            const endDateForSales = toolArgs.endDate && toolArgs.endDate !== "" ? new Date(toolArgs.endDate) : new Date();
+                            
+                            console.log(`[getDailySales] Buscando vendas ${productIdForSales ? `do produto #${productIdForSales}` : 'gerais'} de ${startDateForSales.toISOString()} até ${endDateForSales.toISOString()}`);
                             
                             const dailySales = await getDailySales(
                                 productIdForSales,
@@ -905,8 +1084,12 @@ export class HistoryAgent {
                             break;
                         case 'getStockOutCount':
                             const productIdForStockOut = toolArgs.productId && toolArgs.productId > 0 ? toolArgs.productId : undefined;
-                            const startDateForStockOut = toolArgs.startDate && toolArgs.startDate !== "" ? new Date(toolArgs.startDate) : undefined;
-                            const endDateForStockOut = toolArgs.endDate && toolArgs.endDate !== "" ? new Date(toolArgs.endDate) : new Date();
+                            
+                            // Validar e corrigir datas
+                            const startDateForStockOut = validateAndFixDate(toolArgs.startDate, -30);
+                            const endDateForStockOut = validateAndFixDate(toolArgs.endDate);
+                            
+                            console.log(`[getStockOutCount] Buscando faltas ${productIdForStockOut ? `do produto #${productIdForStockOut}` : 'gerais'} de ${startDateForStockOut.toISOString()} até ${endDateForStockOut.toISOString()}`);
                             
                             const stockOuts = await getStockOutCount(
                                 productIdForStockOut,
@@ -931,8 +1114,11 @@ export class HistoryAgent {
                             };
                             break;
                         case 'getPurchaseExpenses':
-                            const startDateForExpenses = toolArgs.startDate && toolArgs.startDate !== "" ? new Date(toolArgs.startDate) : undefined;
-                            const endDateForExpenses = toolArgs.endDate && toolArgs.endDate !== "" ? new Date(toolArgs.endDate) : new Date();
+                            // Validar e corrigir datas
+                            const startDateForExpenses = validateAndFixDate(toolArgs.startDate, -30);
+                            const endDateForExpenses = validateAndFixDate(toolArgs.endDate);
+                            
+                            console.log(`[getPurchaseExpenses] Buscando gastos de ${startDateForExpenses.toISOString()} até ${endDateForExpenses.toISOString()}`);
                             
                             const expenses = await getPurchaseExpenses(
                                 startDateForExpenses,
@@ -977,8 +1163,12 @@ export class HistoryAgent {
                             break;
                         case 'getProductRevenue':
                             const productIdForRevenue = toolArgs.productId && toolArgs.productId > 0 ? toolArgs.productId : undefined;
-                            const startDateForRevenue = toolArgs.startDate && toolArgs.startDate !== "" ? new Date(toolArgs.startDate) : undefined;
-                            const endDateForRevenue = toolArgs.endDate && toolArgs.endDate !== "" ? new Date(toolArgs.endDate) : new Date();
+                            
+                            // Validar e corrigir datas
+                            const startDateForRevenue = validateAndFixDate(toolArgs.startDate, -30);
+                            const endDateForRevenue = validateAndFixDate(toolArgs.endDate);
+                            
+                            console.log(`[getProductRevenue] Buscando receita ${productIdForRevenue ? `do produto #${productIdForRevenue}` : 'geral'} de ${startDateForRevenue.toISOString()} até ${endDateForRevenue.toISOString()}`);
                             
                             const revenue = await getProductRevenue(
                                 productIdForRevenue,
@@ -1053,6 +1243,65 @@ export class HistoryAgent {
                                 response: {
                                     reasoning: 'Calculando margem de lucro por unidade',
                                     response: responseText
+                                }
+                            };
+                            break;
+                        case 'getTopProducts':
+                            // Validar e corrigir datas de entrada
+                            const startDateForTopProducts = validateAndFixDate(toolArgs.startDate, -30);
+                            const endDateForTopProducts = validateAndFixDate(toolArgs.endDate);
+                            
+                            // Garantir que a data inicial é anterior à final
+                            if (startDateForTopProducts > endDateForTopProducts) {
+                                console.warn("[getTopProducts] Data inicial posterior à final, trocando datas");
+                                const temp = startDateForTopProducts.getTime();
+                                startDateForTopProducts.setTime(endDateForTopProducts.getTime());
+                                endDateForTopProducts.setTime(temp);
+                            }
+                            
+                            const limitForTopProducts = toolArgs.limit && toolArgs.limit > 0 ? toolArgs.limit : 10;
+                            
+                            console.log(`[getTopProducts] Buscando produtos de ${startDateForTopProducts.toISOString()} até ${endDateForTopProducts.toISOString()}`);
+                            
+                            const topProducts = await getTopProducts(startDateForTopProducts, endDateForTopProducts, limitForTopProducts);
+                            
+                            let topProductsResponse = `🏆 Rankings dos Melhores Produtos (${startDateForTopProducts.toLocaleDateString('pt-BR')} a ${endDateForTopProducts.toLocaleDateString('pt-BR')})\n\n`;
+                            
+                            // 1. Top por quantidade
+                            topProductsResponse += `📈 Top ${limitForTopProducts} Produtos por Quantidade Vendida:\n`;
+                            if (topProducts.byQuantity.length > 0) {
+                                topProducts.byQuantity.forEach((product, index) => {
+                                    topProductsResponse += `${index + 1}. ${product.productName}: ${product.totalQuantity} unidades (R$ ${formatCurrency(product.totalRevenue)})\n`;
+                                });
+                            } else {
+                                topProductsResponse += `Nenhum produto vendido no período.\n`;
+                            }
+                            
+                            // 2. Top por valor
+                            topProductsResponse += `\n💰 Top ${limitForTopProducts} Produtos por Valor de Vendas:\n`;
+                            if (topProducts.byRevenue.length > 0) {
+                                topProducts.byRevenue.forEach((product, index) => {
+                                    topProductsResponse += `${index + 1}. ${product.productName}: R$ ${formatCurrency(product.totalRevenue)} (${product.totalQuantity} unidades)\n`;
+                                });
+                            } else {
+                                topProductsResponse += `Nenhum produto vendido no período.\n`;
+                            }
+                            
+                            // 3. Top por lucro
+                            topProductsResponse += `\n💸 Top ${limitForTopProducts} Produtos por Lucro:\n`;
+                            if (topProducts.byProfit.length > 0) {
+                                topProducts.byProfit.forEach((product, index) => {
+                                    topProductsResponse += `${index + 1}. ${product.productName}: R$ ${formatCurrency(product.profit)} (${product.totalQuantity} unidades)\n`;
+                                });
+                            } else {
+                                topProductsResponse += `Não há dados de lucro disponíveis para o período.\n`;
+                            }
+                            
+                            toolCallResponse = {
+                                final: false,
+                                response: {
+                                    reasoning: 'Calculando rankings dos produtos',
+                                    response: topProductsResponse
                                 }
                             };
                             break;
@@ -1307,6 +1556,24 @@ export const tools = [
                     productId: { type: 'number', description: 'ID do produto (opcional)' },
                 },
                 required: ['productId'],
+                additionalProperties: false,
+            },
+        },
+    },
+    {
+        type: 'function' as const,
+        function: {
+            name: 'getTopProducts',
+            description: 'Retorna rankings dos 10 melhores produtos por quantidade, valor e lucro',
+            strict: true,
+            parameters: {
+                type: 'object',
+                properties: {
+                    startDate: { type: 'string', description: 'Data inicial no formato YYYY-MM-DD (opcional)' },
+                    endDate: { type: 'string', description: 'Data final no formato YYYY-MM-DD (opcional)' },
+                    limit: { type: 'number', description: 'Quantidade de produtos para retornar (padrão: 10)' }
+                },
+                required: ['startDate', 'endDate', 'limit'],
                 additionalProperties: false,
             },
         },

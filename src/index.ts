@@ -49,7 +49,7 @@ async function run() {
     }
 
     messages.push({ role: "assistant", content: formattedResponse });
-    await telegram.telegram.sendMessage(Number(telegramChatId), reasoning);
+    // await telegram.telegram.sendMessage(Number(telegramChatId), reasoning);
     await telegram.telegram.sendMessage(Number(telegramChatId), formattedResponse);
   });
 
