@@ -38,6 +38,8 @@ async function run() {
     const content = ctx.message.text;
     messages.push({ role: "user", content });
 
+    messages = messages.slice(-50);
+
     const { reasoning, response } = await mainHandle(messages, ctx, telegramChatId);
 
     const formattedResponse = convertMarkdownToWhatsAppFormat(response);
@@ -62,6 +64,8 @@ async function run() {
     const transcription = await transcriber.process(voiceUrl.href);
 
     messages.push({ role: "user", content: transcription });
+
+    messages = messages.slice(-50);
 
     const { reasoning, response } = await mainHandle(messages, ctx, telegramChatId);
 

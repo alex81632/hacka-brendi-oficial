@@ -103,18 +103,47 @@ async function getStockQuantity(productId?: number) {
 async function getDailySales(productId?: number, startDate?: Date, endDate: Date = new Date()) {
     const start = startDate || new Date(endDate.getTime() - 30 * 24 * 60 * 60 * 1000);
     
-    if (productId) {
+    if (productId && productId !== 0) {
         // Buscar estatísticas específicas do produto
         const productSales = await saleItemRepository.getProductSaleStats(productId, start, endDate);
         
         // Adicionar informações sobre quais vendedores venderam este produto
         const productSellerStats = await getProductSellerStats(productId, start, endDate);
         
+        // Buscar todas as vendas que contém este produto no período
+        const sales = await saleRepository.findByDateRange(start, endDate);
+        
+        // Filtrar apenas vendas que incluem o produto específico
+        const relevantSales = sales.filter(sale => 
+            sale.items.some(item => item.productId === productId)
+        );
+        
+        // Agrupar vendas por dia
+        const salesByDay: Record<string, { date: string, quantity: number, value: number }> = {};
+        
+        relevantSales.forEach(sale => {
+            const saleDate = sale.date.toISOString().split('T')[0]; // YYYY-MM-DD
+            
+            if (!salesByDay[saleDate]) {
+                salesByDay[saleDate] = {
+                    date: saleDate,
+                    quantity: 0,
+                    value: 0
+                };
+            }
+            
+            // Somar apenas os itens deste produto
+            const productItems = sale.items.filter(item => item.productId === productId);
+            salesByDay[saleDate].quantity += productItems.reduce((sum, item) => sum + item.quantity, 0);
+            salesByDay[saleDate].value += productItems.reduce((sum, item) => sum + (item.quantity * item.unitPrice), 0);
+        });
+        
         return {
             averageQuantityPerSale: productSales.averageQuantityPerSale,
             totalQuantity: productSales.totalQuantity,
             salesCount: productSales.salesCount,
-            sellerStats: productSellerStats
+            sellerStats: productSellerStats,
+            dailySales: Object.values(salesByDay).sort((a, b) => a.date.localeCompare(b.date))
         };
     }
     
@@ -796,6 +825,15 @@ export class HistoryAgent {
                                             `- ${seller.sellerName}: ${seller.totalQuantity} unidades em ${seller.salesCount} vendas`
                                         ).join('\n') : 
                                         'Nenhuma venda por vendedor registrada');
+                                        
+                                // Adicionar informações de vendas diárias se disponíveis
+                                if (dailySales.dailySales?.length) {
+                                    salesResponse += `\n\n📅 Vendas por Dia:\n`;
+                                    
+                                    dailySales.dailySales.forEach(day => {
+                                        salesResponse += `- ${new Date(day.date).toLocaleDateString('pt-BR')}: ${day.quantity} unidades (R$ ${formatCurrency(day.value)})\n`;
+                                    });
+                                }
                             } else {
                                 // Formatação para resumo geral
                                 salesResponse = `📈 Resumo Geral de Vendas\n\n` +
