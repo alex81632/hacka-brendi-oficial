@@ -1610,7 +1610,7 @@ export class ForecastAgent {
 
         2. Estoque Projetado vs. Ponto de Reposição
             - Compara consumo estimado com o nível mínimo de segurança
-            - Indica quais produtos devem ser reabastecidos nos próximos dias
+            - Indica quais produtos devem ser reabastecidos nos próximos dias e diz qual é o seu fornecedor
             - Use getRestockAlert()
 
         3. Projeção de Vendas por Produto

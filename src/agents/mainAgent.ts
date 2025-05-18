@@ -33,7 +33,7 @@ As categorias são:
 
 "history" - Perguntas sobre produtos, vendas, estoque, etc, resumo de produtos, vendas, Graficos de vendas passadas, produtos mais vendidos, etc.
 
-"forecast" - Perguntas relacionadas a projeções, previsões ou estimativas para o futuro.
+"forecast" - Perguntas relacionadas a projeções, previsões ou estimativas para o futuro, graficos de previsão de vendas, graficos de previsão de estoque, qualquer pergunta sobre repor o estoque, qualquer pergunta sobre previsão de vendas, perguntas sobre com quem comprar, etc.
 
 "greetings" - Coisas como "Ola", "Como você está?", "O que você faz?", e etc.
 

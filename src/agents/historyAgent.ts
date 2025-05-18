@@ -277,73 +277,6 @@ async function getStockOutCount(productId?: number, startDate?: Date, endDate: D
     };
 }
 
-async function getRequiredRestock(productId?: number) {
-    // Obter todos os produtos ou um produto específico
-    const products = productId 
-        ? [await productRepository.findById(productId)] 
-        : await productRepository.findAll();
-    
-    // Obter vendas para calcular a média diária
-    const endDate = new Date();
-    const startDate = new Date(endDate.getTime() - 90 * 24 * 60 * 60 * 1000); // Últimos 90 dias
-    const salesByProduct = await saleRepository.getSalesByProduct(startDate, endDate);
-    
-    const result = [];
-    
-    for (const product of products) {
-        if (!product) continue;
-        
-        // Obter todos os itens de inventário para este produto
-        const inventoryItems = await inventoryRepository.findByProduct(product.id);
-        const currentStock = inventoryItems.reduce((sum, item) => sum + item.quantity, 0);
-        
-        // Calcular média diária de vendas nos últimos 90 dias
-        const productSales = salesByProduct.find(s => s.productId === product.id);
-        const soldQuantity = productSales?.totalQuantity || 0;
-        const averageDailySales = soldQuantity / 90; // Dias no período
-        
-        // Definir estoque ideal para 30 dias
-        const idealStock = Math.ceil(averageDailySales * 30);
-        const requiredQuantity = Math.max(0, idealStock - currentStock);
-        
-        // Obter categoria para agrupamento
-        const category = product.categoryId 
-            ? await categoryRepository.findById(product.categoryId)
-            : null;
-        
-        // Incluir fornecedor preferencial
-        const supplier = product.supplierId 
-            ? await supplierRepository.findById(product.supplierId)
-            : null;
-        
-        result.push({
-            productId: product.id,
-            name: product.name,
-            currentStock,
-            idealStock,
-            requiredQuantity,
-            averageDailySales,
-            category: category ? {
-                id: category.id,
-                name: category.name
-            } : null,
-            supplier: supplier ? {
-                id: supplier.id,
-                name: supplier.name,
-                contact: supplier.contact,
-                email: supplier.email
-            } : null,
-            inventoryByWarehouse: inventoryItems.map(item => ({
-                warehouseId: item.warehouseId,
-                warehouseName: item.warehouse.name,
-                quantity: item.quantity
-            }))
-        });
-    }
-    
-    return result.filter(item => item.requiredQuantity > 0);
-}
-
 async function getPurchaseExpenses(startDate?: Date, endDate: Date = new Date()) {
     const start = startDate || new Date(endDate.getTime() - 30 * 24 * 60 * 60 * 1000);
     const purchases = await purchaseRepository.findByDateRange(start, endDate);
@@ -637,27 +570,22 @@ export class HistoryAgent {
            - Análise por categoria e armazém
            - Use getStockOutCount()
 
-        6. Reabastecimento Necessário
-           - Quantidade necessária para voltar ao nível ideal
-           - Sugestões de fornecedores
-           - Use getRequiredRestock()
-
-        7. Gasto com Compras
+        6. Gasto com Compras
            - Total gasto em compras de mercadorias por período
            - Análise por fornecedor e categoria
            - Use getPurchaseExpenses()
 
-        8. Receita por Produto
+        7. Receita por Produto
            - Valor arrecadado em vendas por item/período
            - Análise por vendedor e cliente
            - Use getProductRevenue()
 
-        9. Margem por Peça
+        8. Margem por Peça
            - Diferença entre preço de venda e custo por unidade
            - Análise por fornecedor e categoria
            - Use getProductMargin()
         
-        10. Visualização Gráfica
+        9. Visualização Gráfica
            - Cria um gráfico com os dados fornecidos
            - Envia o gráfico para o usuário via Telegram
            - Use createChart() para visualizar dados de forma gráfica
@@ -961,32 +889,6 @@ export class HistoryAgent {
                                 response: {
                                     reasoning: 'Verificando faltas no estoque',
                                     response: stockOutResponse
-                                }
-                            };
-                            break;
-                        case 'getRequiredRestock':
-                            const productIdForRestock = toolArgs.productId && toolArgs.productId > 0 ? toolArgs.productId : undefined;
-                            const restock = await getRequiredRestock(productIdForRestock);
-                            let restockResponse = '';
-                            
-                            if (Array.isArray(restock)) {
-                                if (restock.length === 0) {
-                                    restockResponse = 'Não há necessidade de reposição de estoque.';
-                                } else {
-                                    restockResponse = restock
-                                        .filter(p => p !== null)
-                                        .map(p => `${p.name}: ${p.requiredQuantity} unidades necessárias`)
-                                        .join('\n');
-                                }
-                            } else {
-                                restockResponse = 'Dados de reposição indisponíveis.';
-                            }
-                            
-                            toolCallResponse = {
-                                final: false,
-                                response: {
-                                    reasoning: 'Calculando necessidade de reposição',
-                                    response: restockResponse
                                 }
                             };
                             break;
