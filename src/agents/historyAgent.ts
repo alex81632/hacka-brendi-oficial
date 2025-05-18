@@ -671,28 +671,6 @@ export class HistoryAgent {
         - Escolha um título claro que represente os dados mostrados
         - Use legendas adequadas para os eixos X e Y
 
-        # Informações Adicionais
-        - Você tem acesso a informações detalhadas sobre fornecedores, categorias, armazéns, vendedores e clientes.
-        - Você pode fornecer insights sobre como a distribuição do estoque, performance de vendedores e comportamento de clientes.
-        - Utilize as métricas para sugerir ações estratégicas e ajudar na tomada de decisões.
-
-        # Exemplos de perguntas
-        - "Qual o estoque atual do produto X?"
-        - "Como está distribuído o estoque do produto Y pelos armazéns?"
-        - "Quantas unidades vendemos por dia do produto Y por vendedor?"
-        - "Qual o valor total em estoque por categoria?"
-        - "Quanto tempo o produto Z fica em média no estoque?"
-        - "Quais categorias têm produtos com pouco estoque?"
-        - "Preciso comprar mais unidades do produto W? Qual fornecedor é recomendado?"
-        - "Quanto gastamos com compras no último mês por fornecedor?"
-        - "Qual a receita do produto K no período por vendedor e cliente?"
-        - "Qual a margem de lucro por unidade do produto J? Como se compara com outros produtos da mesma categoria?"
-        - "Quais foram os melhores vendedores no último mês?"
-        - "Quais clientes mais compraram no último trimestre?"
-        - "Mostre um gráfico das vendas mensais do último semestre"
-        - "Gere um gráfico de estoque por categoria"
-        - "Quero ver o gráfico de margem de lucro dos principais produtos"
-
         # Dia de hoje
         - ${getInformacaoDataHora()}
 

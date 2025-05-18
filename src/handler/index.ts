@@ -3,6 +3,7 @@ import { MainAgent } from "../agents/mainAgent.js";
 import { HistoryAgent } from "../agents/historyAgent.js";
 import { GeneralAgent } from "../agents/generalAgent.js";
 import { Context } from "telegraf";
+import { ForecastAgent } from "../agents/forecastAgent.js";
 
 export const mainHandle = async (
     messages: ChatCompletionMessageParam[],
@@ -16,28 +17,11 @@ export const mainHandle = async (
     const { reasoning, category } = await agent.process(messages);
 
     const historyAgent = new HistoryAgent();
-    
-    // Definir o contexto do Telegram para o HistoryAgent se disponível
+    const forecastAgent = new ForecastAgent();
     if (telegramContext && chatId) {
         historyAgent.setTelegramContext(telegramContext, chatId);
+        forecastAgent.setTelegramContext(telegramContext, chatId);
     }
-    
-    const forecastAgent = {
-        process: async (messages: ChatCompletionMessageParam[]) => {
-            return {
-                reasoning: "Resposta da categoria forecast",
-                response: "Resposta da categoria forecast"
-            };
-        }
-    };
-    const analysisAgent = {
-        process: async (messages: ChatCompletionMessageParam[]) => {
-            return {
-                reasoning: "Resposta da categoria analysis",
-                response: "Resposta da categoria analysis"
-            };
-        }
-    };
     const generalAgent = new GeneralAgent();
 
     let agentResponse;
@@ -48,9 +32,6 @@ export const mainHandle = async (
             break;
         case "forecast":
             agentResponse = await forecastAgent.process(messages);
-            break;
-        case "analysis":
-            agentResponse = await analysisAgent.process(messages);
             break;
         case "greetings":
             agentResponse = await generalAgent.process(messages);
