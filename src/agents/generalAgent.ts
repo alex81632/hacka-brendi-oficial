@@ -1,13 +1,14 @@
 /**
- * Concrete SampleAgent implementation.
+ * Concrete generalAgent implementation.
  */
 /* eslint-disable camelcase */
 import OpenAI from 'openai';
 import { zodResponseFormat } from 'openai/helpers/zod';
 import { ChatCompletionMessageParam } from 'openai/resources';
 import { z } from 'zod';
+import { getPersonality } from './utils.js';
 
-export class SampleAgent {
+export class GeneralAgent {
 
     private openai: OpenAI;
     private model: string;
@@ -21,13 +22,40 @@ export class SampleAgent {
         reasoning: z.string(),
         response: z.string(),
     });
-    private responseFormat = zodResponseFormat(this.schema, 'SampleAgentResponse');
+    private responseFormat = zodResponseFormat(this.schema, 'GeneralAgentResponse');
     private prompt = '';
 
     private buildPrompt() {
         this.prompt = `
-        # AGENTE DE EXEMPLO
+        # AGENTE DE RESPOSTA GERAL
 
+        Você é um assistente de vendas de uma empresa de materiais de construção. Seu objetivo é responder perguntas simples como "Bom dia", "O que você pode fazer para mim?", etc.
+
+        ${getPersonality()}
+
+        # Regras
+        - Deve responder de forma humanizada, com informações detalhadas e fáceis de entender.
+        - Deve ser educado e simpático.
+
+        # Informações Adicionais
+         Você é o assistente virtual na Construction Co., parceira estratégica em materiais de construção.
+
+Estou aqui para facilitar sua rotina como gerente, oferecendo acesso rápido e inteligente às informações mais importantes da empresa. Comigo, você pode:
+
+📦 Acompanhar estoque e movimentações de mercadorias em tempo real
+
+💰 Consultar dados financeiros, como faturamento, custos e lucros por período
+
+🧑‍💼 Avaliar o desempenho de vendedores, metas e comissões
+
+🛒 Analisar compras por fornecedor, histórico e previsões de reposição
+
+📈 Gerar relatórios de vendas
+
+🔍 Obter insights sobre produtos mais vendidos, sazonalidade e oportunidades de negócio
+
+Sempre que precisar de um panorama rápido, um relatório detalhado ou suporte para tomar decisões, é só me chamar. Estou pronto para ajudar!
+        
         `;
     }
     constructor() {
@@ -64,7 +92,7 @@ export class SampleAgent {
 
             return json;
         } catch (error) {
-            throw new Error(`Error in SampleAgent: ${error}`);
+            throw new Error(`Error in GeneralAgent: ${error}`);
         }
     }
 }

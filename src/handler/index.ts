@@ -1,8 +1,14 @@
 import { ChatCompletionMessageParam } from "openai/resources";
 import { MainAgent } from "../agents/mainAgent.js";
 import { HistoryAgent } from "../agents/historyAgent.js";
+import { GeneralAgent } from "../agents/generalAgent.js";
+import { Context } from "telegraf";
 
-export const mainHandle = async (messages: ChatCompletionMessageParam[]): Promise<{
+export const mainHandle = async (
+    messages: ChatCompletionMessageParam[],
+    telegramContext?: Context,
+    chatId?: number
+): Promise<{
     reasoning: string;
     response: string;
 }> => {
@@ -10,6 +16,12 @@ export const mainHandle = async (messages: ChatCompletionMessageParam[]): Promis
     const { reasoning, category } = await agent.process(messages);
 
     const historyAgent = new HistoryAgent();
+    
+    // Definir o contexto do Telegram para o HistoryAgent se disponível
+    if (telegramContext && chatId) {
+        historyAgent.setTelegramContext(telegramContext, chatId);
+    }
+    
     const forecastAgent = {
         process: async (messages: ChatCompletionMessageParam[]) => {
             return {
@@ -26,31 +38,7 @@ export const mainHandle = async (messages: ChatCompletionMessageParam[]): Promis
             };
         }
     };
-    const generalAgent = {
-        process: async (messages: ChatCompletionMessageParam[]) => {
-            return {
-                reasoning: "Resposta da categoria general",
-                response: `
-Olá, sou seu assistente virtual na Construction Co., sua parceira estratégica em materiais de construção.
-
-Estou aqui para facilitar sua rotina como gerente, oferecendo acesso rápido e inteligente às informações mais importantes da empresa. Comigo, você pode:
-
-📦 Acompanhar estoque e movimentações de mercadorias em tempo real
-
-💰 Consultar dados financeiros, como faturamento, custos e lucros por loja ou período
-
-🧑‍💼 Avaliar o desempenho de vendedores, metas e comissões
-
-🛒 Analisar compras por fornecedor, histórico e previsões de reposição
-
-📈 Gerar relatórios de vendas, comparativos entre lojas e tendências
-
-🔍 Obter insights sobre produtos mais vendidos, sazonalidade e oportunidades de negócio
-
-Sempre que precisar de um panorama rápido, um relatório detalhado ou suporte para tomar decisões, é só me chamar. Estou pronto para ajudar!`
-            };
-        }
-    };
+    const generalAgent = new GeneralAgent();
 
     let agentResponse;
 
@@ -64,7 +52,7 @@ Sempre que precisar de um panorama rápido, um relatório detalhado ou suporte p
         case "analysis":
             agentResponse = await analysisAgent.process(messages);
             break;
-        case "general":
+        case "greetings":
             agentResponse = await generalAgent.process(messages);
             break;
         default:
@@ -74,6 +62,8 @@ Sempre que precisar de um panorama rápido, um relatório detalhado ou suporte p
             };
             break;
     }
+
+    console.log(`[DEBUG] main -> ${category}`);
 
     return agentResponse || {
         reasoning: "Ocorreu um erro ao processar a resposta",

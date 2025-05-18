@@ -46,14 +46,12 @@ async function getStockQuantity(productId?: number) {
             };
         }
         
-        // Agrupa por armazém e ordena por quantidade
-        const warehouseDistribution = inventoryItems
-            .map(item => ({
-                warehouseName: item.warehouse.name,
-                warehouseId: item.warehouseId,
-                quantity: item.quantity
-            }))
-            .sort((a, b) => b.quantity - a.quantity);
+        // Agrupa por armazém
+        const warehouseDistribution = inventoryItems.map(item => ({
+            warehouseName: item.warehouse.name,
+            warehouseId: item.warehouseId,
+            quantity: item.quantity
+        }));
         
         // Soma total
         const total = warehouseDistribution.reduce((sum, item) => sum + item.quantity, 0);
@@ -91,13 +89,7 @@ async function getStockQuantity(productId?: number) {
         return result;
     }, {} as Record<number, any>);
     
-    // Converte para array e ordena por quantidade total
-    return Object.values(productQuantities)
-        .map(product => ({
-            ...product,
-            warehouseDistribution: product.warehouseDistribution.sort((a: WarehouseDistribution, b: WarehouseDistribution) => b.quantity - a.quantity)
-        }))
-        .sort((a, b) => b.total - a.total);
+    return Object.values(productQuantities);
 }
 
 async function getDailySales(productId?: number, startDate?: Date, endDate: Date = new Date()) {

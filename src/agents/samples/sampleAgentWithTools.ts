@@ -31,7 +31,7 @@ export class SampleAgent {
         `;
     }
     constructor() {
-        this.openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY___RESUME_CONVERSATIONS });
+        this.openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
         this.model = this.config.model;
         this.temperature = this.config.temperature;
     }

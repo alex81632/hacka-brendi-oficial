@@ -4,6 +4,7 @@ import { message } from "telegraf/filters";
 import { ChatCompletionMessageParam } from "openai/resources";
 import { mainHandle } from "./handler/index.js";
 import { TranscribeAudio } from "./agents/transcriberAgent.js";
+import { convertMarkdownToWhatsAppFormat } from "./agents/utils.js";
 
 async function connectToTelegram() {
   const telegraf = new Telegraf<Context>(process.env.TELEGRAM_TOKEN!);
@@ -37,15 +38,17 @@ async function run() {
     const content = ctx.message.text;
     messages.push({ role: "user", content });
 
-    const { reasoning, response } = await mainHandle(messages);
+    const { reasoning, response } = await mainHandle(messages, ctx, telegramChatId);
+
+    const formattedResponse = convertMarkdownToWhatsAppFormat(response);
 
     if (!response) {
       return;
     }
 
-    messages.push({ role: "assistant", content: response });
-
-    await telegram.telegram.sendMessage(Number(telegramChatId), response);
+    messages.push({ role: "assistant", content: formattedResponse });
+    await telegram.telegram.sendMessage(Number(telegramChatId), reasoning);
+    await telegram.telegram.sendMessage(Number(telegramChatId), formattedResponse);
   });
 
   telegram.on(message("voice"), async (ctx) => {
@@ -60,7 +63,7 @@ async function run() {
 
     messages.push({ role: "user", content: transcription });
 
-    const { reasoning, response } = await mainHandle(messages);
+    const { reasoning, response } = await mainHandle(messages, ctx, telegramChatId);
 
     if (!response) {
       return;
