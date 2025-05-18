@@ -31,7 +31,7 @@ export class MainAgent {
 
 As categorias são:
 
-"history" - Perguntas sobre produtos, vendas, estoque, etc, resumo de produtos, vendas, etc.
+"history" - Perguntas sobre produtos, vendas, estoque, etc, resumo de produtos, vendas, Graficos de vendas passadas, produtos mais vendidos, etc.
 
 "forecast" - Perguntas relacionadas a projeções, previsões ou estimativas para o futuro.
 

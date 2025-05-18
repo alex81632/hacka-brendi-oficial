@@ -38,7 +38,7 @@ async function run() {
     const content = ctx.message.text;
     messages.push({ role: "user", content });
 
-    const { reasoning, response } = await mainHandle(messages);
+    const { reasoning, response } = await mainHandle(messages, ctx, telegramChatId);
 
     const formattedResponse = convertMarkdownToWhatsAppFormat(response);
 
@@ -63,7 +63,7 @@ async function run() {
 
     messages.push({ role: "user", content: transcription });
 
-    const { reasoning, response } = await mainHandle(messages);
+    const { reasoning, response } = await mainHandle(messages, ctx, telegramChatId);
 
     if (!response) {
       return;

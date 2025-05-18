@@ -2,8 +2,13 @@ import { ChatCompletionMessageParam } from "openai/resources";
 import { MainAgent } from "../agents/mainAgent.js";
 import { HistoryAgent } from "../agents/historyAgent.js";
 import { GeneralAgent } from "../agents/generalAgent.js";
+import { Context } from "telegraf";
 
-export const mainHandle = async (messages: ChatCompletionMessageParam[]): Promise<{
+export const mainHandle = async (
+    messages: ChatCompletionMessageParam[],
+    telegramContext?: Context,
+    chatId?: number
+): Promise<{
     reasoning: string;
     response: string;
 }> => {
@@ -11,6 +16,12 @@ export const mainHandle = async (messages: ChatCompletionMessageParam[]): Promis
     const { reasoning, category } = await agent.process(messages);
 
     const historyAgent = new HistoryAgent();
+    
+    // Definir o contexto do Telegram para o HistoryAgent se disponível
+    if (telegramContext && chatId) {
+        historyAgent.setTelegramContext(telegramContext, chatId);
+    }
+    
     const forecastAgent = {
         process: async (messages: ChatCompletionMessageParam[]) => {
             return {
