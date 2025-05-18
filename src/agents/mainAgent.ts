@@ -19,7 +19,7 @@ export class MainAgent {
     };
     private schema = z.object({
         reasoning: z.string().describe('O raciocínio para a classificação da pergunta'),
-        category: z.enum(['history', 'forecast', 'analysis', 'greetings']).describe('A categoria da pergunta'),
+        category: z.enum(['history', 'forecast', 'greetings']).describe('A categoria da pergunta'),
     });
     private responseFormat = zodResponseFormat(this.schema, 'MainAgentResponse');
     private prompt = '';
@@ -35,18 +35,14 @@ As categorias são:
 
 "forecast" - Perguntas relacionadas a projeções, previsões ou estimativas para o futuro.
 
-"analysis" - Perguntas que exigem uma análise completa, abrangendo passado, presente e futuro, podendo incluir gráficos, relatórios ou comparações.
-
 "greetings" - Coisas como "Ola", "Como você está?", "O que você faz?", e etc.
 
 Instruções adicionais:
 
-Se a pergunta não se encaixar claramente em nenhuma das categorias acima, responda educadamente que não é possível classificá-la.
-
-Se a pergunta não estiver relacionada à empresa ou ao contexto de construção, responda educadamente que só pode tratar de questões relacionadas à Construction Co.
+Se a pergunta não estiver relacionada à empresa ou ao contexto de construção, envie para o greetings.
 
 Formato de resposta: RESPONDA APENAS NESSE FORMATO CASO HAJA CATEGORIA ENCONTRADA
-{Categoria: history | forecast | analysis | greetings}
+{Categoria: history | forecast | greetings}
         `;
     }
     constructor() {
