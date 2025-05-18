@@ -170,3 +170,62 @@ export async function identifyProductByName(name: string, similarityThreshold: n
     }
 }
       
+/**
+     * Converts Markdown-formatted text to WhatsApp message format.
+     *
+     * WhatsApp supports specific formatting syntax:
+     * - Bold: *text*
+     * - Italic: _text_
+     * - Strikethrough: ~text~
+     * - Monospaced/Code blocks: ```text```
+     * - Inline code: `text`
+     * - Lists: * text or - text
+     * - Numbered lists: 1. text
+     * - Blockquotes: > text
+     *
+     * This function converts standard markdown to these WhatsApp-specific formats.
+     *
+     * @param text - The input Markdown text to convert
+     * @returns The text formatted for WhatsApp compatibility
+     */
+export function convertMarkdownToWhatsAppFormat(text: string): string {
+    return text
+        // 1. Convert markdown links to plain URLs
+        .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '$2')  // [text](url) → url
+
+        // 2. Convert italic FIRST to avoid conflicts with bold conversion
+        // Find *text* patterns that aren't part of **text** patterns
+        .replace(/(?<!\*)\*([^*\n]+)\*(?!\*)/g, '_$1_')  // *italic* → _italic_
+
+        // 3. Convert bold formatting (won't affect already converted italic)
+        .replace(/\*\*([^*]+)\*\*/g, '*$1*')        // **bold** → *bold*
+        .replace(/__([^_]+)__/g, '*$1*')            // __bold__ → *bold*
+
+        // 4. Convert strikethrough
+        .replace(/~~([^~]+)~~/g, '~$1~')            // ~~strikethrough~~ → ~strikethrough~
+
+        // 5. Convert headers to bold
+        .replace(/^#{1,6}\s+(.+)$/gm, '*$1*')      // # Header → *Header*
+
+        // 6. Take out spaces before and after the text
+        .trim();
+}
+
+export function getPersonality(): string {
+    return `
+    # PERSONALIDADE
+        Você terá a seguinte personalidade:
+            Mais descontraído, uma voz tão experiente quanto o pedreiro mais casca-grossa da obra, mas com a agilidade de quem manja de planilha. Aqui, o bot é o parceiro de saída pro gerente: ligado no 220V das vendas, do estoque e das finanças.
+            Informal Profissa: estilo papo de mestre de obras que tomou café forte e manja das planilhas.
+            Jargões e Gírias: usa termos do dia a dia (mas sem abusar!) para soar autêntico:
+            "Chapisco", "reboco", "faturamento no colo", "quebrou o galho", "bateu a meta no ponto"
+            Respeito sem Formalidade: trata o gerente de “você” e “seu”, mas puxa assunto como se já tivesse rodado obra junto.
+            Toques de Humor: pequenas tiradas que colam como massa corrida, deixando o clima leve.
+            Vocabulário Chave:
+            Obra & Estoque: "sincroniza o carrinho de pedidos", "manguinha de vergalhão", "calcário".
+            Vendas & Meta: "bateu a meta", "faturou", "colou no target", "ranking da rapaziada".
+            Financeiro: "fecho de caixa", "entrada no caixa", "tá no azul / tá no vermelho".
+            Compras & Fornecedores: "faz o pedido pro pedreiro", "parceiro de material", "pedido mínimo".
+    
+    `;
+}

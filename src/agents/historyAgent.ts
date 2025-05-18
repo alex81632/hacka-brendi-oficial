@@ -6,58 +6,207 @@ import OpenAI from 'openai';
 import { zodResponseFormat } from 'openai/helpers/zod';
 import { ChatCompletionMessageParam } from 'openai/resources';
 import { z } from 'zod';
-import { getInformacaoDataHora, identifyProductByName } from './utils.js';
+import { getInformacaoDataHora, identifyProductByName, getPersonality } from './utils.js';
 import { productRepository } from '../database/repositories/productRepository.js';
 import { purchaseItemRepository } from '../database/repositories/purchaseItemRepository.js';
 import { purchaseRepository } from '../database/repositories/purchaseRepository.js';
 import { saleItemRepository } from '../database/repositories/saleItemRepository.js';
 import { saleRepository } from '../database/repositories/saleRepository.js';
+import { inventoryRepository } from '../database/repositories/inventoryRepository.js';
+import { warehouseRepository } from '../database/repositories/warehouseRepository.js';
+import { sellerRepository } from '../database/repositories/sellerRepository.js';
+import { customerRepository } from '../database/repositories/customerRepository.js';
+import { categoryRepository } from '../database/repositories/categoryRepository.js';
+import { supplierRepository } from '../database/repositories/supplierRepository.js';
 
-interface Product {
-    id: number;
-    name: string;
-    inventory?: {
-        quantity: number;
-    };
-    purchases?: Array<{
-        costPrice: number;
-    }>;
-    sales?: Array<{
-        unitPrice: number;
-    }>;
+// Adicionar interface no início do arquivo, após os imports
+interface WarehouseDistribution {
+    warehouseName: string;
+    warehouseId: number;
+    quantity: number;
+}
+
+// Função auxiliar para formatar valores numéricos com segurança
+function formatCurrency(value: any): string {
+    if (typeof value === 'number') {
+        return value.toFixed(2);
+    }
+    return '0.00';
 }
 
 // Funções auxiliares para métricas
 async function getStockQuantity(productId?: number) {
-    const products = await productRepository.findAll() as unknown as Product[];
     if (productId) {
-        const product = products.find(p => p.id === productId);
-        return product?.inventory?.quantity || 0;
+        const inventoryItems = await inventoryRepository.findByProduct(productId);
+        if (!inventoryItems || inventoryItems.length === 0) {
+            return {
+                total: 0,
+                warehouseDistribution: []
+            };
+        }
+        
+        // Agrupa por armazém
+        const warehouseDistribution = inventoryItems.map(item => ({
+            warehouseName: item.warehouse.name,
+            warehouseId: item.warehouseId,
+            quantity: item.quantity
+        }));
+        
+        // Soma total
+        const total = warehouseDistribution.reduce((sum, item) => sum + item.quantity, 0);
+        
+        return {
+            total,
+            productName: inventoryItems[0].product.name,
+            warehouseDistribution
+        };
     }
-    return products.map(p => ({
-        productId: p.id,
-        name: p.name,
-        quantity: p.inventory?.quantity || 0
-    }));
+    
+    // Caso não seja fornecido um ID específico, agrupa o estoque por produto e armazém
+    const allInventory = await inventoryRepository.findAll();
+    
+    // Agrupa e soma as quantidades por produto
+    const productQuantities = allInventory.reduce((result, item) => {
+        const productId = item.productId;
+        
+        if (!result[productId]) {
+            result[productId] = {
+                productId,
+                name: item.product.name,
+                total: 0,
+                warehouseDistribution: []
+            };
+        }
+        
+        result[productId].total += item.quantity;
+        result[productId].warehouseDistribution.push({
+            warehouseName: item.warehouse.name,
+            warehouseId: item.warehouseId,
+            quantity: item.quantity
+        });
+        
+        return result;
+    }, {} as Record<number, any>);
+    
+    return Object.values(productQuantities);
 }
 
 async function getDailySales(productId?: number, startDate?: Date, endDate: Date = new Date()) {
-    const sales = await saleRepository.getSalesSummaryByPeriod('daily', startDate || new Date(endDate.getTime() - 30 * 24 * 60 * 60 * 1000), endDate);
+    const start = startDate || new Date(endDate.getTime() - 30 * 24 * 60 * 60 * 1000);
+    
     if (productId) {
-        const productSales = await saleItemRepository.getProductSaleStats(productId, startDate || new Date(endDate.getTime() - 30 * 24 * 60 * 60 * 1000), endDate);
-        return productSales.averageQuantityPerSale;
+        // Buscar estatísticas específicas do produto
+        const productSales = await saleItemRepository.getProductSaleStats(productId, start, endDate);
+        
+        // Adicionar informações sobre quais vendedores venderam este produto
+        const productSellerStats = await getProductSellerStats(productId, start, endDate);
+        
+        return {
+            averageQuantityPerSale: productSales.averageQuantityPerSale,
+            totalQuantity: productSales.totalQuantity,
+            salesCount: productSales.salesCount,
+            sellerStats: productSellerStats
+        };
     }
-    return sales;
+    
+    // Obter resumo de vendas diárias
+    const dailySales = await saleRepository.getSalesSummaryByPeriod('daily', start, endDate);
+    
+    // Adicionar vendas por categoria
+    const salesByCategory = await categoryRepository.getSalesByCategory(start, endDate);
+    
+    // Adicionar desempenho dos vendedores
+    const sellerPerformance = await sellerRepository.getSalesPerformance(start, endDate);
+    
+    return {
+        dailySummary: dailySales,
+        categoryBreakdown: salesByCategory,
+        sellerPerformance: sellerPerformance
+    };
+}
+
+// Função auxiliar para obter estatísticas de vendas por vendedor para um produto específico
+async function getProductSellerStats(productId: number, startDate: Date, endDate: Date) {
+    const sellers = await sellerRepository.findAll();
+    const stats = [];
+    
+    for (const seller of sellers) {
+        const sales = await sellerRepository.findSalesByPeriod(seller.id, startDate, endDate);
+        
+        // Filtrar apenas vendas que incluem o produto específico
+        const relevantSales = sales.filter(sale => 
+            sale.items.some(item => item.productId === productId)
+        );
+        
+        if (relevantSales.length > 0) {
+            const totalQuantity = relevantSales.reduce((sum, sale) => {
+                const items = sale.items.filter(item => item.productId === productId);
+                return sum + items.reduce((itemSum, item) => itemSum + item.quantity, 0);
+            }, 0);
+            
+            stats.push({
+                sellerId: seller.id,
+                sellerName: seller.name,
+                salesCount: relevantSales.length,
+                totalQuantity
+            });
+        }
+    }
+    
+    return stats.sort((a, b) => b.totalQuantity - a.totalQuantity);
 }
 
 async function getStockValue() {
-    const products = await productRepository.findAll() as unknown as Product[];
-    return products.reduce((total, product) => {
-        const quantity = product.inventory?.quantity || 0;
-        const lastPurchase = product.purchases?.[0];
-        const costPrice = lastPurchase?.costPrice || 0;
-        return total + (quantity * costPrice);
-    }, 0);
+    const inventory = await inventoryRepository.findAll();
+    let totalValue = 0;
+    
+    // Mapa para armazenar o valor por categoria
+    const categoryValues: Record<number, { categoryId: number, categoryName: string, value: number }> = {};
+    
+    // Mapa para armazenar o valor por armazém
+    const warehouseValues: Record<number, { warehouseId: number, warehouseName: string, value: number }> = {};
+    
+    for (const item of inventory) {
+        const product = item.product;
+        const quantity = item.quantity;
+        const costPrice = product.cost || 0;
+        const itemValue = quantity * costPrice;
+        
+        totalValue += itemValue;
+        
+        // Agregar valor por categoria
+        if (product.categoryId) {
+            // Buscar categoria se necessário
+            const categoryName = product.categoryId ? 
+                (await categoryRepository.findById(product.categoryId))?.name || 'Sem categoria' : 
+                'Sem categoria';
+                
+            if (!categoryValues[product.categoryId]) {
+                categoryValues[product.categoryId] = {
+                    categoryId: product.categoryId,
+                    categoryName: categoryName,
+                    value: 0
+                };
+            }
+            categoryValues[product.categoryId].value += itemValue;
+        }
+        
+        // Agregar valor por armazém
+        if (!warehouseValues[item.warehouseId]) {
+            warehouseValues[item.warehouseId] = {
+                warehouseId: item.warehouseId,
+                warehouseName: item.warehouse.name,
+                value: 0
+            };
+        }
+        warehouseValues[item.warehouseId].value += itemValue;
+    }
+    
+    return {
+        totalValue,
+        byCategory: Object.values(categoryValues).sort((a, b) => b.value - a.value),
+        byWarehouse: Object.values(warehouseValues).sort((a, b) => b.value - a.value)
+    };
 }
 
 async function getStockLifetime(productId?: number) {
@@ -85,37 +234,105 @@ async function getStockLifetime(productId?: number) {
 }
 
 async function getStockOutCount(productId?: number, startDate?: Date, endDate: Date = new Date()) {
-    const start = startDate || new Date(endDate.getTime() - 30 * 24 * 60 * 60 * 1000);
-    const products = productId ? [await productRepository.findById(productId)] : await productRepository.findAll() as unknown as Product[];
+    // Usando o inventoryRepository.findLowStock com threshold 0
+    const lowStockItems = await inventoryRepository.findLowStock(0);
     
-    let stockOuts = 0;
-    for (const product of products) {
-        if (!product) continue;
-        const inventoryItems = Array.isArray(product.inventory) ? product.inventory : [product.inventory];
-        const totalQuantity = inventoryItems.reduce((sum, inv) => sum + (inv?.quantity || 0), 0);
-        if (totalQuantity <= 0) {
-            stockOuts++;
-        }
+    // Se um productId específico for fornecido
+    if (productId) {
+        return lowStockItems.filter(item => item.productId === productId).length;
     }
     
-    return stockOuts;
+    // Agrupar por produto para contar stockouts únicos por produto
+    const productStockOuts = lowStockItems.reduce((acc, item) => {
+        if (!acc[item.productId]) {
+            acc[item.productId] = {
+                productId: item.productId,
+                productName: item.product.name,
+                warehousesWithStockOut: []
+            };
+        }
+        acc[item.productId].warehousesWithStockOut.push({
+            warehouseId: item.warehouseId,
+            warehouseName: item.warehouse.name
+        });
+        return acc;
+    }, {} as Record<number, any>);
+    
+    // Também podemos aproveitar a funcionalidade do categoryRepository
+    const categoriesWithLowStock = await categoryRepository.getCategoriesWithLowStock(0);
+    
+    return {
+        totalStockOuts: Object.keys(productStockOuts).length,
+        productStockOuts: Object.values(productStockOuts),
+        categoriesWithStockOut: categoriesWithLowStock
+    };
 }
 
 async function getRequiredRestock(productId?: number) {
-    const products = productId ? [await productRepository.findById(productId)] : await productRepository.findAll() as unknown as Product[];
+    // Obter todos os produtos ou um produto específico
+    const products = productId 
+        ? [await productRepository.findById(productId)] 
+        : await productRepository.findAll();
     
-    return products.map(product => {
-        if (!product) return null;
-        const inventoryItems = Array.isArray(product.inventory) ? product.inventory : [product.inventory];
-        const currentStock = inventoryItems.reduce((sum, inv) => sum + (inv?.quantity || 0), 0);
-        const averageDailySales = 0; // Implementar cálculo baseado no histórico
-        const idealStock = averageDailySales * 30; // 30 dias de estoque
-        return {
+    // Obter vendas para calcular a média diária
+    const endDate = new Date();
+    const startDate = new Date(endDate.getTime() - 90 * 24 * 60 * 60 * 1000); // Últimos 90 dias
+    const salesByProduct = await saleRepository.getSalesByProduct(startDate, endDate);
+    
+    const result = [];
+    
+    for (const product of products) {
+        if (!product) continue;
+        
+        // Obter todos os itens de inventário para este produto
+        const inventoryItems = await inventoryRepository.findByProduct(product.id);
+        const currentStock = inventoryItems.reduce((sum, item) => sum + item.quantity, 0);
+        
+        // Calcular média diária de vendas nos últimos 90 dias
+        const productSales = salesByProduct.find(s => s.productId === product.id);
+        const soldQuantity = productSales?.totalQuantity || 0;
+        const averageDailySales = soldQuantity / 90; // Dias no período
+        
+        // Definir estoque ideal para 30 dias
+        const idealStock = Math.ceil(averageDailySales * 30);
+        const requiredQuantity = Math.max(0, idealStock - currentStock);
+        
+        // Obter categoria para agrupamento
+        const category = product.categoryId 
+            ? await categoryRepository.findById(product.categoryId)
+            : null;
+        
+        // Incluir fornecedor preferencial
+        const supplier = product.supplierId 
+            ? await supplierRepository.findById(product.supplierId)
+            : null;
+        
+        result.push({
             productId: product.id,
             name: product.name,
-            requiredQuantity: Math.max(0, idealStock - currentStock)
-        };
-    }).filter(Boolean);
+            currentStock,
+            idealStock,
+            requiredQuantity,
+            averageDailySales,
+            category: category ? {
+                id: category.id,
+                name: category.name
+            } : null,
+            supplier: supplier ? {
+                id: supplier.id,
+                name: supplier.name,
+                contact: supplier.contact,
+                email: supplier.email
+            } : null,
+            inventoryByWarehouse: inventoryItems.map(item => ({
+                warehouseId: item.warehouseId,
+                warehouseName: item.warehouse.name,
+                quantity: item.quantity
+            }))
+        });
+    }
+    
+    return result.filter(item => item.requiredQuantity > 0);
 }
 
 async function getPurchaseExpenses(startDate?: Date, endDate: Date = new Date()) {
@@ -127,21 +344,129 @@ async function getPurchaseExpenses(startDate?: Date, endDate: Date = new Date())
 
 async function getProductRevenue(productId?: number, startDate?: Date, endDate: Date = new Date()) {
     const start = startDate || new Date(endDate.getTime() - 30 * 24 * 60 * 60 * 1000);
-    const sales = await saleRepository.getSalesByProduct(start, endDate);
     
     if (productId) {
-        return sales.find(s => s.productId === productId)?.totalValue || 0;
+        // Se um produto específico for solicitado, buscar informações detalhadas
+        const productSales = await saleItemRepository.getProductSaleStats(productId, start, endDate);
+        
+        // Adicionar info de vendas por vendedor para este produto
+        const sellerData = await getProductSellerStats(productId, start, endDate);
+        
+        // Adicionar info de clientes que compraram o produto
+        const customerData = await getProductCustomerStats(productId, start, endDate);
+        
+        return {
+            productId,
+            totalRevenue: productSales.totalRevenue,
+            totalQuantity: productSales.totalQuantity,
+            salesCount: productSales.salesCount,
+            averagePricePerUnit: productSales.averagePricePerUnit,
+            sellerData,
+            customerData
+        };
     }
-    return sales;
+    
+    // Buscar dados gerais de vendas por produto
+    const salesByProduct = await saleRepository.getSalesByProduct(start, endDate);
+    
+    // Adicionar informações de vendas por categoria
+    const salesByCategory = await categoryRepository.getSalesByCategory(start, endDate);
+    
+    return {
+        byProduct: salesByProduct,
+        byCategory: salesByCategory
+    };
+}
+
+// Função auxiliar para obter estatísticas de clientes para um produto específico
+async function getProductCustomerStats(productId: number, startDate: Date, endDate: Date) {
+    const customers = await customerRepository.findAll();
+    const stats = [];
+    
+    for (const customer of customers) {
+        const purchaseHistory = await customerRepository.getPurchaseHistory(customer.id);
+        
+        // Filtrar apenas compras no período e que incluem o produto
+        const relevantPurchases = purchaseHistory.filter(purchase => {
+            const purchaseDate = new Date(purchase.date);
+            return (
+                purchaseDate >= startDate && 
+                purchaseDate <= endDate &&
+                purchase.items.some(item => item.productId === productId)
+            );
+        });
+        
+        if (relevantPurchases.length > 0) {
+            const totalQuantity = relevantPurchases.reduce((sum, purchase) => {
+                const items = purchase.items.filter(item => item.productId === productId);
+                return sum + items.reduce((itemSum, item) => itemSum + item.quantity, 0);
+            }, 0);
+            
+            const totalSpent = relevantPurchases.reduce((sum, purchase) => {
+                const items = purchase.items.filter(item => item.productId === productId);
+                return sum + items.reduce((itemSum, item) => itemSum + (item.quantity * item.unitPrice), 0);
+            }, 0);
+            
+            stats.push({
+                customerId: customer.id,
+                customerName: customer.name,
+                purchaseCount: relevantPurchases.length,
+                totalQuantity,
+                totalSpent
+            });
+        }
+    }
+    
+    return stats.sort((a, b) => b.totalQuantity - a.totalQuantity);
 }
 
 async function getProductMargin(productId?: number) {
-    const products = productId ? [await productRepository.findById(productId)] : await productRepository.findAll() as unknown as Product[];
-    
-    const results = [];
-    for (const product of products) {
-        if (!product) continue;
+    if (productId) {
+        // Buscar informações detalhadas do produto
+        const product = await productRepository.findById(productId);
+        if (!product) {
+            return [];
+        }
         
+        // Buscar última venda
+        const lastSale = await saleItemRepository.findByProductId(product.id);
+        const lastSalePrice = lastSale?.[0]?.unitPrice;
+        
+        // Buscar última compra
+        const lastPurchase = await purchaseItemRepository.findByProductId(product.id);
+        const lastPurchasePrice = lastPurchase?.[0]?.costPrice;
+        
+        if (!lastSalePrice || !lastPurchasePrice) {
+            return [];
+        }
+        
+        const margin = lastSalePrice - lastPurchasePrice;
+        const marginPercentage = (margin / lastPurchasePrice) * 100;
+        
+        // Obter fornecedor do produto
+        const supplier = product.supplierId ? 
+            await supplierRepository.findById(product.supplierId) : null;
+        
+        return [{
+            productId: product.id,
+            name: product.name,
+            costPrice: lastPurchasePrice,
+            salePrice: lastSalePrice,
+            margin,
+            marginPercentage,
+            supplier: supplier ? {
+                id: supplier.id,
+                name: supplier.name
+            } : null
+        }];
+    }
+    
+    // Buscar todos os produtos
+    const products = await productRepository.findAll();
+    const result = [];
+    
+    // Calcular margem para cada produto
+    for (const product of products) {
         // Buscar última venda
         const lastSale = await saleItemRepository.findByProductId(product.id);
         const lastSalePrice = lastSale?.[0]?.unitPrice;
@@ -152,14 +477,37 @@ async function getProductMargin(productId?: number) {
         
         if (!lastSalePrice || !lastPurchasePrice) continue;
         
-        results.push({
+        const margin = lastSalePrice - lastPurchasePrice;
+        const marginPercentage = (margin / lastPurchasePrice) * 100;
+        
+        // Obter fornecedor do produto
+        const supplier = product.supplierId ? 
+            await supplierRepository.findById(product.supplierId) : null;
+            
+        // Obter categoria
+        const category = product.categoryId ?
+            await categoryRepository.findById(product.categoryId) : null;
+        
+        result.push({
             productId: product.id,
             name: product.name,
-            margin: lastSalePrice - lastPurchasePrice
+            costPrice: lastPurchasePrice,
+            salePrice: lastSalePrice,
+            margin,
+            marginPercentage,
+            supplier: supplier ? {
+                id: supplier.id,
+                name: supplier.name
+            } : null,
+            category: category ? {
+                id: category.id,
+                name: category.name
+            } : null
         });
     }
     
-    return results;
+    // Ordenar por margem (valor absoluto)
+    return result.sort((a, b) => b.margin - a.margin);
 }
 
 export class HistoryAgent {
@@ -186,20 +534,25 @@ export class HistoryAgent {
 
         # Objetivo
         - Responder perguntas sobre o histórico de dados de uma empresa.
-        - Analisar os dados e fornecer respostas detalhadas sobre métricas de estoque e vendas.
+        - Analisar os dados e fornecer respostas detalhadas sobre métricas de estoque, vendas, fornecedores, clientes e categorias.
         - Chame a função identifyProductByName para buscar o produto mais similar ao nome fornecido.
+
+        ${getPersonality()}
 
         # Métricas Disponíveis
         1. Quantidade em Estoque
            - Total de unidades disponíveis de cada produto
+           - Distribuição por armazém 
            - Use getStockQuantity()
 
         2. Vendas por Dia
            - Média de peças vendidas por dia para cada item
+           - Análise por vendedor e categoria
            - Use getDailySales()
 
         3. Valor em Dinheiro no Estoque
            - Soma do custo de todas as unidades em estoque
+           - Análise por categoria e armazém
            - Use getStockValue()
 
         4. Tempo de Vida no Estoque
@@ -207,45 +560,62 @@ export class HistoryAgent {
            - Use getStockLifetime()
 
         5. Faltas no Estoque
-           - Quantas vezes houve falta de produtos no mês
+           - Quantas vezes houve falta de produtos
+           - Análise por categoria e armazém
            - Use getStockOutCount()
 
         6. Reabastecimento Necessário
            - Quantidade necessária para voltar ao nível ideal
+           - Sugestões de fornecedores
            - Use getRequiredRestock()
 
         7. Gasto com Compras
            - Total gasto em compras de mercadorias por período
+           - Análise por fornecedor e categoria
            - Use getPurchaseExpenses()
 
         8. Receita por Produto
            - Valor arrecadado em vendas por item/período
+           - Análise por vendedor e cliente
            - Use getProductRevenue()
 
         9. Margem por Peça
            - Diferença entre preço de venda e custo por unidade
+           - Análise por fornecedor e categoria
            - Use getProductMargin()
+
+        # Informações Adicionais
+        - Você tem acesso a informações detalhadas sobre fornecedores, categorias, armazéns, vendedores e clientes.
+        - Você pode fornecer insights sobre como a distribuição do estoque, performance de vendedores e comportamento de clientes.
+        - Utilize as métricas para sugerir ações estratégicas e ajudar na tomada de decisões.
 
         # Exemplos de perguntas
         - "Qual o estoque atual do produto X?"
-        - "Quantas unidades vendemos por dia do produto Y?"
-        - "Qual o valor total em estoque?"
+        - "Como está distribuído o estoque do produto Y pelos armazéns?"
+        - "Quantas unidades vendemos por dia do produto Y por vendedor?"
+        - "Qual o valor total em estoque por categoria?"
         - "Quanto tempo o produto Z fica em média no estoque?"
-        - "Quantas vezes ficamos sem estoque este mês?"
-        - "Preciso comprar mais unidades do produto W?"
-        - "Quanto gastamos com compras no último mês?"
-        - "Qual a receita do produto K no período?"
-        - "Qual a margem de lucro por unidade do produto J?"
+        - "Quais categorias têm produtos com pouco estoque?"
+        - "Preciso comprar mais unidades do produto W? Qual fornecedor é recomendado?"
+        - "Quanto gastamos com compras no último mês por fornecedor?"
+        - "Qual a receita do produto K no período por vendedor e cliente?"
+        - "Qual a margem de lucro por unidade do produto J? Como se compara com outros produtos da mesma categoria?"
+        - "Quais foram os melhores vendedores no último mês?"
+        - "Quais clientes mais compraram no último trimestre?"
 
         # Dia de hoje
         - ${getInformacaoDataHora()}
 
         # Regras
+        - Formate as respostas de maneira clara e legível, com títulos e subtítulos, emojis e quebras de linha.
         - Sempre identifique o produto usando identifyProductByName antes de buscar métricas específicas
+        - Nunca sugira métricas que não estão disponíveis nas funções
+        - Apenas use as funções que estão disponíveis
         - Forneça contexto e explicações junto com os números
         - Use as funções apropriadas para cada tipo de métrica
         - Considere períodos padrão de 7 dias quando não especificado
-        - De a resposta de maneira humanizada, com informações detalhadas e fáceis de entender. De o máximo de detalhes, como nome do produto, quantidade, valor, etc.
+        - De a resposta de maneira humanizada, com informações detalhadas e fáceis de entender. De o máximo de detalhes, como nome do produto, quantidade, valor, fornecedor, categoria, etc.
+        - Utilize todas as informações disponíveis nas funções para oferecer análises completas.
         `;
     }
     constructor() {
@@ -261,8 +631,6 @@ export class HistoryAgent {
         try {
             this.buildPrompt();
 
-            console.log(this.prompt);
-
             let filteredTools = tools;
 
             const maxIterations = 12;
@@ -271,7 +639,6 @@ export class HistoryAgent {
             const aiThoughts = [];
 
             for (let iteration = 1; iteration <= maxIterations; iteration++) {
-                console.log(currentMessages);
                 // eslint-disable-next-line no-await-in-loop
                 const response = await this.openai.chat.completions.create({
                     model: this.model,
@@ -322,14 +689,25 @@ export class HistoryAgent {
                             
                             if (Array.isArray(stockQuantity)) {
                                 if (stockQuantity.length === 0) {
-                                    stockResponse = 'Não há produtos em estoque.';
+                                    stockResponse = '📦 Não há produtos em estoque.';
                                 } else {
-                                    stockResponse = stockQuantity.map(p => 
-                                        `${p.name}: ${p.quantity} unidades`
-                                    ).join('\n');
+                                    stockResponse = '📊 Resumo do Estoque por Produto:\n\n' +
+                                        stockQuantity.map(p => 
+                                            `🏷️ ${p.name}\n` +
+                                            `   Total: ${p.total} unidades\n` +
+                                            `   Distribuição por Armazém:\n` +
+                                            p.warehouseDistribution.map((w: WarehouseDistribution) => 
+                                                `   • ${w.warehouseName}: ${w.quantity} unidades`
+                                            ).join('\n')
+                                        ).join('\n\n');
                                 }
                             } else {
-                                stockResponse = `${stockQuantity} unidades`;
+                                stockResponse = `📦 ${stockQuantity.productName}\n` +
+                                    `Total em Estoque: ${stockQuantity.total} unidades\n\n` +
+                                    `Distribuição por Armazém:\n` +
+                                    stockQuantity.warehouseDistribution.map((w: WarehouseDistribution) => 
+                                        `• ${w.warehouseName}: ${w.quantity} unidades`
+                                    ).join('\n');
                             }
                             
                             toolCallResponse = {
@@ -352,16 +730,40 @@ export class HistoryAgent {
                             );
                             
                             let salesResponse = '';
-                            if (typeof dailySales === 'number') {
-                                salesResponse = `Média de ${dailySales.toFixed(2)} unidades vendidas por dia`;
-                            } else if (Array.isArray(dailySales)) {
-                                if (dailySales.length === 0) {
-                                    salesResponse = 'Não há dados de vendas disponíveis para o período.';
-                                } else {
-                                    salesResponse = `Resumo de vendas por dia:\n${JSON.stringify(dailySales, null, 2)}`;
-                                }
+                            
+                            if (productIdForSales) {
+                                // Formatação para produto específico
+                                salesResponse = `📊 Análise de Vendas do Produto\n\n` +
+                                    `Média por venda: ${dailySales.averageQuantityPerSale?.toFixed(2) || 0} unidades\n` +
+                                    `Total vendido: ${dailySales.totalQuantity || 0} unidades\n` +
+                                    `Número de vendas: ${dailySales.salesCount || 0}\n\n` +
+                                    `👥 Performance por Vendedor:\n` +
+                                    (dailySales.sellerStats?.length ? 
+                                        dailySales.sellerStats.map(seller => 
+                                            `- ${seller.sellerName}: ${seller.totalQuantity} unidades em ${seller.salesCount} vendas`
+                                        ).join('\n') : 
+                                        'Nenhuma venda por vendedor registrada');
                             } else {
-                                salesResponse = 'Dados de vendas indisponíveis.';
+                                // Formatação para resumo geral
+                                salesResponse = `📈 Resumo Geral de Vendas\n\n` +
+                                    `🗓️ Vendas Diárias:\n` +
+                                    (dailySales.dailySummary?.length ? 
+                                        dailySales.dailySummary.map(day => 
+                                            `- ${new Date(day.period).toLocaleDateString('pt-BR')}: ${day.itemsSold} unidades (R$ ${formatCurrency(day.totalValue)})`
+                                        ).join('\n') : 
+                                        'Nenhuma venda registrada no período\n') +
+                                    `\n📦 Vendas por Categoria:\n` +
+                                    (dailySales.categoryBreakdown?.length ? 
+                                        dailySales.categoryBreakdown.map(cat => 
+                                            `- ${cat.categoryName}: ${cat.totalQuantity} unidades (R$ ${formatCurrency(cat.totalValue)})`
+                                        ).join('\n') : 
+                                        'Nenhuma venda por categoria registrada\n') +
+                                    `\n🏆 Performance dos Vendedores:\n` +
+                                    (dailySales.sellerPerformance?.length ? 
+                                        dailySales.sellerPerformance.map(seller => 
+                                            `- ${seller.sellerName}: ${seller.totalSales} vendas (R$ ${formatCurrency(seller.totalValue)})`
+                                        ).join('\n') : 
+                                        'Nenhum dado de performance de vendedores disponível');
                             }
                             
                             toolCallResponse = {
@@ -374,11 +776,13 @@ export class HistoryAgent {
                             break;
                         case 'getStockValue':
                             const stockValue = await getStockValue();
+                            const formattedStockValue = formatCurrency(stockValue.totalValue);
+                            
                             toolCallResponse = {
                                 final: false,
                                 response: {
                                     reasoning: 'Calculando valor total em estoque',
-                                    response: `O valor total em estoque é de R$ ${stockValue.toFixed(2)}`
+                                    response: `O valor total em estoque é de R$ ${formattedStockValue}`
                                 }
                             };
                             break;
@@ -403,11 +807,20 @@ export class HistoryAgent {
                                 startDateForStockOut,
                                 endDateForStockOut
                             );
+                            
+                            let stockOutResponse;
+                            if (typeof stockOuts === 'number') {
+                                stockOutResponse = `Houve ${stockOuts} ocorrência(s) de falta no estoque no período analisado`;
+                            } else {
+                                stockOutResponse = `Total de produtos sem estoque: ${stockOuts.totalStockOuts}. ` +
+                                    `${stockOuts.categoriesWithStockOut.length} categorias possuem produtos sem estoque.`;
+                            }
+                            
                             toolCallResponse = {
                                 final: false,
                                 response: {
                                     reasoning: 'Verificando faltas no estoque',
-                                    response: `Houve ${stockOuts} ocorrência(s) de falta no estoque no período analisado`
+                                    response: stockOutResponse
                                 }
                             };
                             break;
@@ -482,7 +895,10 @@ export class HistoryAgent {
                                 : new Date().toLocaleDateString('pt-BR');
                             
                             if (typeof revenue === 'number') {
-                                revenueResponse = `Receita no período de ${revStartDateStr} a ${revEndDateStr}: R$ ${revenue.toFixed(2)}`;
+                                revenueResponse = `Receita no período de ${revStartDateStr} a ${revEndDateStr}: R$ ${formatCurrency(revenue)}`;
+                            } else if ('totalRevenue' in revenue) {
+                                // Caso de produto específico (nova estrutura)
+                                revenueResponse = `Receita para produto #${revenue.productId} no período de ${revStartDateStr} a ${revEndDateStr}: R$ ${formatCurrency(revenue.totalRevenue)}. Quantidade vendida: ${revenue.totalQuantity}`;
                             } else if (Array.isArray(revenue)) {
                                 if (revenue.length === 0) {
                                     revenueResponse = 'Não há dados de receita disponíveis para o período.';
@@ -490,10 +906,15 @@ export class HistoryAgent {
                                     revenueResponse = `Receita por produto entre ${revStartDateStr} e ${revEndDateStr}:\n${JSON.stringify(
                                         revenue.map(r => ({
                                             ...r,
-                                            totalValue: `R$ ${r.totalValue.toFixed(2)}`
+                                            totalValue: `R$ ${formatCurrency(r.totalValue)}`
                                         })), null, 2
                                     )}`;
                                 }
+                            } else if ('byProduct' in revenue) {
+                                // Nova estrutura com informações por categoria
+                                revenueResponse = `Relatório de receitas (${revStartDateStr} a ${revEndDateStr}):\n\n` +
+                                    `Total de produtos vendidos: ${revenue.byProduct.length}\n` +
+                                    `Total por categoria: ${revenue.byCategory.length} categorias`;
                             } else {
                                 revenueResponse = 'Dados de receita indisponíveis.';
                             }
@@ -515,11 +936,11 @@ export class HistoryAgent {
                                 if (margin.length === 0) {
                                     responseText = 'Não foram encontradas informações de margem para este produto.';
                                 } else if (margin.length === 1) {
-                                    responseText = `Margem de lucro: R$ ${margin[0].margin.toFixed(2)} por unidade do produto ${margin[0].name}`;
+                                    responseText = `Margem de lucro: R$ ${formatCurrency(margin[0].margin)} por unidade do produto ${margin[0].name}`;
                                 } else {
                                     responseText = JSON.stringify(margin.map(m => ({
                                         ...m,
-                                        margin: `R$ ${m.margin.toFixed(2)}`
+                                        margin: `R$ ${formatCurrency(m.margin)}`
                                     })));
                                 }
                             } else {
