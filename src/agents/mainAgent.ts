@@ -19,7 +19,7 @@ export class MainAgent {
     };
     private schema = z.object({
         reasoning: z.string().describe('O raciocínio para a classificação da pergunta'),
-        category: z.enum(['history', 'forecast', 'analysis', 'general']).describe('A categoria da pergunta'),
+        category: z.enum(['history', 'forecast', 'analysis', 'greetings']).describe('A categoria da pergunta'),
     });
     private responseFormat = zodResponseFormat(this.schema, 'MainAgentResponse');
     private prompt = '';
@@ -31,13 +31,13 @@ export class MainAgent {
 
 As categorias são:
 
-"history" - Perguntas sobre eventos, dados ou situações que ocorreram no passado ou dados de estoque.
+"history" - Perguntas sobre produtos, vendas, estoque, etc, resumo de produtos, vendas, etc.
 
 "forecast" - Perguntas relacionadas a projeções, previsões ou estimativas para o futuro.
 
 "analysis" - Perguntas que exigem uma análise completa, abrangendo passado, presente e futuro, podendo incluir gráficos, relatórios ou comparações.
 
-"general" - Coisas como "Ola", "Como você está?", "O que você faz?", e etc. Se estiver em dúvida, mande para history.
+"greetings" - Coisas como "Ola", "Como você está?", "O que você faz?", e etc.
 
 Instruções adicionais:
 
@@ -46,7 +46,7 @@ Se a pergunta não se encaixar claramente em nenhuma das categorias acima, respo
 Se a pergunta não estiver relacionada à empresa ou ao contexto de construção, responda educadamente que só pode tratar de questões relacionadas à Construction Co.
 
 Formato de resposta: RESPONDA APENAS NESSE FORMATO CASO HAJA CATEGORIA ENCONTRADA
-{Categoria: history | forecast | analysis | general}
+{Categoria: history | forecast | analysis | greetings}
         `;
     }
     constructor() {

@@ -339,7 +339,69 @@ async function getPurchaseExpenses(startDate?: Date, endDate: Date = new Date())
     const start = startDate || new Date(endDate.getTime() - 30 * 24 * 60 * 60 * 1000);
     const purchases = await purchaseRepository.findByDateRange(start, endDate);
     
-    return purchases.reduce((total, purchase) => total + purchase.totalCost, 0);
+    // Calcular total geral
+    const totalExpenses = purchases.reduce((total, purchase) => total + purchase.totalCost, 0);
+    
+    // Agrupar por fornecedor
+    const supplierExpenses = new Map<number, { 
+        supplierId: number;
+        supplierName: string;
+        totalValue: number;
+        purchaseCount: number;
+    }>();
+    
+    // Agrupar por categoria
+    const categoryExpenses = new Map<number, {
+        categoryId: number;
+        categoryName: string;
+        totalValue: number;
+        itemCount: number;
+    }>();
+    
+    // Processar cada compra
+    for (const purchase of purchases) {
+        // Processar fornecedor
+        if (purchase.supplierId) {
+            const supplier = await supplierRepository.findById(purchase.supplierId);
+            if (supplier) {
+                const current = supplierExpenses.get(supplier.id) || {
+                    supplierId: supplier.id,
+                    supplierName: supplier.name,
+                    totalValue: 0,
+                    purchaseCount: 0
+                };
+                current.totalValue += purchase.totalCost;
+                current.purchaseCount++;
+                supplierExpenses.set(supplier.id, current);
+            }
+        }
+        
+        // Processar categorias dos itens
+        for (const item of purchase.items) {
+            if (item.product?.categoryId) {
+                const category = await categoryRepository.findById(item.product.categoryId);
+                if (category) {
+                    const current = categoryExpenses.get(category.id) || {
+                        categoryId: category.id,
+                        categoryName: category.name,
+                        totalValue: 0,
+                        itemCount: 0
+                    };
+                    current.totalValue += item.quantity * item.costPrice;
+                    current.itemCount += item.quantity;
+                    categoryExpenses.set(category.id, current);
+                }
+            }
+        }
+    }
+    
+    return {
+        totalExpenses,
+        bySupplier: Array.from(supplierExpenses.values())
+            .sort((a, b) => b.totalValue - a.totalValue),
+        byCategory: Array.from(categoryExpenses.values())
+            .sort((a, b) => b.totalValue - a.totalValue)
+    };
 }
 
 async function getProductRevenue(productId?: number, startDate?: Date, endDate: Date = new Date()) {
@@ -776,13 +838,28 @@ export class HistoryAgent {
                             break;
                         case 'getStockValue':
                             const stockValue = await getStockValue();
-                            const formattedStockValue = formatCurrency(stockValue.totalValue);
+                            
+                            let stockValueResponse = `💰 Valor Total em Estoque: R$ ${formatCurrency(stockValue.totalValue)}\n\n`;
+                            
+                            if (stockValue.byCategory?.length) {
+                                stockValueResponse += `📊 Valor por Categoria:\n` +
+                                    stockValue.byCategory.map(cat => 
+                                        `• ${cat.categoryName}: R$ ${formatCurrency(cat.value)}`
+                                    ).join('\n') + '\n\n';
+                            }
+                            
+                            if (stockValue.byWarehouse?.length) {
+                                stockValueResponse += `🏭 Valor por Armazém:\n` +
+                                    stockValue.byWarehouse.map(wh => 
+                                        `• ${wh.warehouseName}: R$ ${formatCurrency(wh.value)}`
+                                    ).join('\n');
+                            }
                             
                             toolCallResponse = {
                                 final: false,
                                 response: {
                                     reasoning: 'Calculando valor total em estoque',
-                                    response: `O valor total em estoque é de R$ ${formattedStockValue}`
+                                    response: stockValueResponse
                                 }
                             };
                             break;
@@ -866,11 +943,32 @@ export class HistoryAgent {
                                 ? endDateForExpenses.toLocaleDateString('pt-BR') 
                                 : new Date().toLocaleDateString('pt-BR');
                             
+                            let expensesResponse = `💰 Gastos com Compras (${startDateStr} a ${endDateStr})\n` +
+                                `Total: R$ ${formatCurrency(expenses.totalExpenses)}\n\n`;
+                            
+                            if (expenses.bySupplier?.length) {
+                                expensesResponse += `👥 Por Fornecedor:\n` +
+                                    expenses.bySupplier.map(sup => 
+                                        `• ${sup.supplierName}:\n` +
+                                        `  - Valor: R$ ${formatCurrency(sup.totalValue)}\n` +
+                                        `  - Compras: ${sup.purchaseCount}`
+                                    ).join('\n\n') + '\n\n';
+                            }
+                            
+                            if (expenses.byCategory?.length) {
+                                expensesResponse += `📦 Por Categoria:\n` +
+                                    expenses.byCategory.map(cat => 
+                                        `• ${cat.categoryName}:\n` +
+                                        `  - Valor: R$ ${formatCurrency(cat.totalValue)}\n` +
+                                        `  - Itens: ${cat.itemCount}`
+                                    ).join('\n\n');
+                            }
+                            
                             toolCallResponse = {
                                 final: false,
                                 response: {
                                     reasoning: 'Calculando gastos com compras',
-                                    response: `Total gasto com compras entre ${startDateStr} e ${endDateStr}: R$ ${expenses.toFixed(2)}`
+                                    response: expensesResponse
                                 }
                             };
                             break;
